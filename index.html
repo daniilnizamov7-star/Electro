@@ -347,41 +347,82 @@ function autoProtForGrp(grpKey, roomType){
   return{type:'auto',nom,ma:null};
 }
 
-// Длина линии: от щитка до точки ввода + внутри комнаты + высота установки
-function calcLineLen(r, innerDist, ptH, isLight, qty){
+// ══ РАСЧЁТ ДЛИНЫ КАБЕЛЯ ══
+// Физика прокладки кабеля по объекту:
+//
+// МОЩНЫЕ (pwr): прямой кабель без ответвлений
+//   щиток → (по потолку) → до прибора → спуск до высоты прибора
+//
+// РОЗЕТКИ / ВЫКЛЮЧАТЕЛИ: кабель петляет через все точки
+//   щиток → коробка → до 1й точки → спуск → подъём → до 2й → спуск → ...→ спуск до последней
+//   Пользователь вводит одно число: расстояние от коробки до самой дальней точки
+//   Программа сама считает: средний шаг = maxDist/n, петли на каждую точку
+//
+// СВЕТИЛЬНИКИ: кабель по потолку, короткие отводы вниз на каждый
+//   щиток → коробка → прогон по потолку → отвод 0.5м × каждый светильник
+//   Выключатель в этой же группе: спуск до 900мм тоже учитывается
+//
+// Константы: +0.6м изгибы + 0.8м разделка × 1.15 запас
+
+const BEND=0.6, RAZD=0.8, ZAP=1.15;
+
+// Мощный потребитель — один прямой кабель
+function calcLenPwr(r, innerDist, ptH){
   const щD=parseFloat(r.dist)||10;
   const roomH=parseFloat(r.h)||2.7;
-  const iD=parseFloat(innerDist)||0;
-  const ZAPAS=1.15, RAZDELKA=0.8;
-  let drop;
-  if(isLight){
-    // ptH=0 → потолочный светильник → запас 0.5м
-    // ptH>0 → выключатель (hStd=900) → реальный спуск от потолка
-    const hM=ptH!=null?parseFloat(ptH)/1000:0;
-    drop=hM>0 ? Math.max(0,roomH-hM) : 0.5;
-  } else {
-    const hM=(ptH!=null?parseFloat(ptH):200)/1000;
-    drop=Math.max(0,roomH-hM);
-  }
-  const base=щD+iD+drop+RAZDELKA;
-  const bendCorr=0.6; // 2 обязательных поворота × 0.3м
-  const n=qty||1;
-  const loopCorr=n>1?(n-1)*0.8:0;
-  return Math.ceil((base+bendCorr+loopCorr)*ZAPAS);
+  const hM=Math.min((ptH!=null?parseFloat(ptH):200)/1000, roomH);
+  const drop=Math.max(0, roomH-hM);
+  return Math.ceil((щD + (parseFloat(innerDist)||0) + drop + BEND + RAZD)*ZAP);
 }
 
-// Строит список линий с автоматическим разбиением по ПУЭ
+// Розетки и выключатели — кабель петляет через все точки
+// maxDist = расстояние от коробки до самой дальней точки (м)
+// n = количество точек на этой линии
+// ptH = высота установки точек (мм)
+function calcLenRoz(r, maxDist, ptH, n){
+  const щD=parseFloat(r.dist)||10;
+  const roomH=parseFloat(r.h)||2.7;
+  const hM=Math.min((ptH!=null?parseFloat(ptH):200)/1000, roomH);
+  const drop=Math.max(0, roomH-hM);  // спуск от потолка до точки
+  const nPts=Math.max(1, n||1);
+  const mD=parseFloat(maxDist)||0;
+  // Горизонтальный прогон по потолку = maxDist (кабель идёт до самой дальней точки)
+  // Вертикаль: (nPts-1) полных петель (спуск+подъём) + финальный спуск
+  const vertical=(nPts-1)*2*drop + drop;
+  return Math.ceil((щD + mD + vertical + BEND + RAZD)*ZAP);
+}
+
+// Освещение — прогон по потолку + отводы
+// maxDist = расстояние до самого дальнего светильника
+// switchH = высота выключателей в группе (мм), 0 если нет
+// nLights = кол-во потолочных светильников
+// nSwitches = кол-во выключателей
+function calcLenLight(r, maxDist, switchH, nLights, nSwitches){
+  const щD=parseFloat(r.dist)||10;
+  const roomH=parseFloat(r.h)||2.7;
+  const mD=parseFloat(maxDist)||0;
+  // Отводы на светильники: 0.5м каждый (короткий хвост)
+  const lightSpurs=(nLights||0)*0.5;
+  // Спуск на выключатели: петля на каждый кроме последнего
+  let switchV=0;
+  if(nSwitches>0){
+    const sH=Math.min((switchH||900)/1000, roomH);
+    const sDrop=Math.max(0, roomH-sH);
+    switchV=(nSwitches-1)*2*sDrop + sDrop;
+  }
+  return Math.ceil((щD + mD + lightSpurs + switchV + BEND + RAZD)*ZAP);
+}
+
+// Строит список линий для комнаты
 function calcRoomLines(r){
   const lines=[];
   const roomType=r.type||'living';
-  const isBath=roomType==='bath';
 
-  // Собираем точки по группам
+  // Группируем точки по grpKey
   const byGrp={};
   Object.entries(r.pts||{}).forEach(([ptId,qty])=>{
     if(!qty)return;
     const pt=PT.find(p=>p.id===ptId);if(!pt)return;
-    // grpKey: для pwr — сам ptId (напр 'pwr_boj'), для остальных — grp ('roz','light','rozIP')
     const grpKey=pt.grp==='pwr'?ptId:pt.grp;
     if(!byGrp[grpKey])byGrp[grpKey]={qtys:[],cable:'2x1.5',boxes:0,ptId,pt};
     const bg=byGrp[grpKey];
@@ -391,43 +432,66 @@ function calcRoomLines(r){
     if((rank[pt.cable]||0)>(rank[bg.cable]||0))bg.cable=pt.cable;
   });
 
+  // ptDists: расстояние от коробки до самой дальней точки группы (одно число)
+  const ptDists=r.ptDists||{};
+
   Object.entries(byGrp).forEach(([grpKey,bg])=>{
     const totalQty=bg.qtys.reduce((s,x)=>s+x.qty,0);
-    const maxPerLine=grpKey==='light'?PUE_MAX_LIGHT:grpKey==='roz'||grpKey==='rozIP'?PUE_MAX_ROZ:999;
-    const numLines=Math.ceil(totalQty/maxPerLine);
-    // innerDist: берём из r.ptDists[grpKey] если задано пользователем, иначе 0
-    const innerDist=(r.ptDists||{})[grpKey]||0;
+    const isPwr=bg.pt?.grp==='pwr';
     const isLight=grpKey==='light';
-    const qPerLine=Math.min(totalQty,maxPerLine);
-    // Для группы light: вычисляем средневзвешенный hStd по количеству точек
-    // Выключатели (hStd=900) имеют реальный спуск, светильники (hStd=0) — запас 0.5м
-    // Берём hStd самой тяжёлой по кабелю точки (максимальный спуск = длиннее кабель)
-    let ptHForLen=bg.pt?.hStd??0;
-    if(isLight && bg.qtys.length>1){
-      // Взвешенное среднее hStd по всем точкам группы
-      const totalW=bg.qtys.reduce((s,x)=>s+x.qty,0);
-      const weightedH=bg.qtys.reduce((s,x)=>{
+    const maxPerLine=isLight?PUE_MAX_LIGHT:(grpKey==='roz'||grpKey==='rozIP'?PUE_MAX_ROZ:999);
+    const numLines=Math.ceil(totalQty/maxPerLine);
+    const maxDist=parseFloat(ptDists[grpKey])||0;
+
+    // Вычисляем длину в зависимости от режима
+    let len;
+    if(isPwr){
+      // Мощный: прямой кабель, на группу одна линия
+      len=calcLenPwr(r, maxDist, bg.pt?.hStd);
+    } else if(isLight){
+      // Освещение: разделяем светильники и выключатели
+      const nLights=bg.qtys.reduce((s,x)=>{
         const pt=PT.find(p=>p.id===x.ptId);
-        return s+(pt?.hStd||0)*x.qty;
+        return s+(pt&&pt.hStd===0?x.qty:0);
       },0);
-      ptHForLen=Math.round(weightedH/totalW);
+      const nSwitches=bg.qtys.reduce((s,x)=>{
+        const pt=PT.find(p=>p.id===x.ptId);
+        return s+(pt&&pt.hStd>0?x.qty:0);
+      },0);
+      // Средняя высота выключателей
+      const switchH=bg.qtys.reduce((s,x)=>{
+        const pt=PT.find(p=>p.id===x.ptId);
+        return pt&&pt.hStd>0?Math.max(s,pt.hStd):s;
+      },900);
+      // Для каждой линии — пропорциональное количество
+      const qPerLine=Math.ceil(totalQty/numLines);
+      const nLPerLine=Math.ceil(nLights/numLines);
+      const nSPerLine=Math.ceil(nSwitches/numLines);
+      len=calcLenLight(r, maxDist, switchH, nLPerLine, nSPerLine);
+    } else {
+      // Розетки: петли через все точки на линии
+      const qPerLine=Math.min(totalQty, maxPerLine);
+      len=calcLenRoz(r, maxDist, bg.pt?.hStd, qPerLine);
     }
-    const len=calcLineLen(r, innerDist, ptHForLen, isLight, qPerLine);
-    const workPerUnit=bg.qtys.reduce((s,x)=>{return s+(PR()['w_'+x.ptId]||200)*x.qty},0);
+
+    const workPerUnit=bg.qtys.reduce((s,x)=>s+(PR()['w_'+x.ptId]||200)*x.qty,0);
 
     for(let li=0;li<numLines;li++){
-      // Первые линии получают maxPerLine точек, последняя — остаток
       const qThis=li<numLines-1?maxPerLine:totalQty-li*maxPerLine;
-      if(qThis<=0)break; // защита от нуля
+      if(qThis<=0)break;
       const lbl=numLines>1?`${r.name} — ${grpLbl(grpKey)} (${li+1}/${numLines})`:`${r.name} — ${grpLbl(grpKey)}`;
       const overKey=grpKey+'_'+li;
       const overr=(r.lineOverrides||{})[overKey];
       const autoProt=autoProtForGrp(grpKey,roomType);
       const prot=overr?.prot||autoProt;
-      lines.push({label:lbl,cable:bg.cable,len,qty:Math.max(1,qThis),
-        boxes:Math.round(bg.boxes/numLines),work:Math.round(workPerUnit/numLines),
-        roomName:r.name,щитокId:r.щитокId,grp:grpKey,is_pwr:bg.pt?.grp==='pwr',
-        prot,overrideKey:overKey,manual_prot:!!overr?.prot});
+      lines.push({
+        label:lbl, cable:bg.cable, len, qty:Math.max(1,qThis),
+        boxes:Math.round(bg.boxes/numLines), work:Math.round(workPerUnit/numLines),
+        roomName:r.name, щитокId:r.щитокId, grp:grpKey, is_pwr:isPwr,
+        prot, overrideKey:overKey, manual_prot:!!overr?.prot,
+        // Для расшифровки в деталях линии
+        _maxDist:maxDist, _isPwr:isPwr, _isLight:isLight,
+      });
     }
   });
   return lines;
@@ -700,23 +764,31 @@ function openLD(gi){
   const innerDist=(r.ptDists||{})[l.grp]||0;
   const roomH=parseFloat(r.h)||2.7;
   const ptForDrop=PT.find(p=>p.id===l.grp)||PT.find(p=>p.grp===l.grp);
-  const ptHStd=ptForDrop?.hStd??0;
-  let drop;
-  if(isLight){
-    const hM=ptHStd/1000;
-    drop=hM>0?Math.max(0,roomH-hM):0.5;
+  const ptHStd=ptForDrop?.hStd??200;
+  const hM=Math.min(ptHStd/1000, roomH);
+  const drop=Math.max(0,roomH-hM);
+  const mD=l._maxDist||innerDist||0;
+  // Строим объяснение под тип линии
+  let explanation='';
+  if(l._isPwr){
+    explanation=`${r.dist||10}м (щиток→прибор)${mD>0?` + ${mD}м (до прибора)`:''}
+    + ${drop.toFixed(1)}м (спуск до прибора h=${ptHStd}мм)
+    + 0.6м (изгибы) + 0.8м (разделка) × 1.15`;
+  } else if(l._isLight){
+    const n=l.qty||1;
+    explanation=`${r.dist||10}м (щиток→коробка)${mD>0?` + ${mD}м (прогон по потолку)`:''}
+    + ${n}×0.5м (отводы на светильники)${drop>0?` + ${drop.toFixed(1)}м (спуск выключателя)`:''}
+    + 0.6м (изгибы) + 0.8м (разделка) × 1.15`;
   } else {
-    drop=Math.max(0,roomH-((ptHStd||200)/1000));
+    const n=l.qty||1;
+    const vert=((n-1)*2*drop+drop).toFixed(1);
+    explanation=`${r.dist||10}м (щиток→коробка)${mD>0?` + ${mD}м (до дальней точки)`:''}
+    + ${vert}м (${n>1?`${n-1} петли + финал спуск`:`спуск`} h=${ptHStd}мм)
+    + 0.6м (изгибы) + 0.8м (разделка) × 1.15`;
   }
-  const dropLbl=isLight&&ptHStd===0?'запас светильника':
-    isLight?`спуск выключателя (${roomH}м − ${(ptHStd/1000).toFixed(1)}м)`:`спуск до точки`;
   h+=`<div style="margin:8px 12px 0;background:var(--bg3);border-radius:var(--rs);padding:10px 12px;font-size:11px;color:var(--t2);line-height:1.8">
     <div style="font-weight:600;color:var(--t);margin-bottom:4px">📐 Как считалась длина:</div>
-    ${r.dist||10}м (щиток→коробка)${innerDist>0?` + ${innerDist}м (коробка→точка)`:''}
-    + ${drop.toFixed(1)}м (${dropLbl})
-    + 0.6м (изгибы) + 0.8м (разделка)
-    ${l.qty>1?`+ ${((l.qty-1)*0.8).toFixed(1)}м (петли между ${l.qty} точками)`:''}
-    × 1.15 (запас) = <b>${l.len}м</b>
+    ${explanation} = <b>${l.len}м</b>
   </div>`;
   // Редактор защиты
   h+=`<div style="margin:10px 12px 0"><div class="ssec-t" style="margin-bottom:6px">Изменить защиту</div><div class="mblk">
