@@ -1369,7 +1369,7 @@ function resetBrandPrices(bk){
     delete PR_MAP[CUR].brand_prices[bk];
   save();rSet();
 }
-if(!PR_MAP[CUR])return;if(!PR_MAP[CUR].custom_mats)PR_MAP[CUR].custom_mats=[];PR_MAP[CUR].custom_mats[i][k]=val}
+function updCM(i,k,val){if(!PR_MAP[CUR])return;if(!PR_MAP[CUR].custom_mats)PR_MAP[CUR].custom_mats=[];PR_MAP[CUR].custom_mats[i][k]=val}
 function addCM(){if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_WORK};if(!PR_MAP[CUR].custom_mats)PR_MAP[CUR].custom_mats=[];PR_MAP[CUR].custom_mats.push({lbl:'',price:0,qty:1,qty_mode:'шт'});save();rSet()}
 function delCM(i){if(PR_MAP[CUR]?.custom_mats)PR_MAP[CUR].custom_mats.splice(i,1);save();rSet()}
 function saveSet(){save();const b=event.target;b.textContent='Сохранено ✓';b.style.background='var(--gr)';setTimeout(()=>{b.textContent='Сохранить';b.style.background=''},1500)}
