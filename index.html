@@ -242,7 +242,12 @@ const BRANDS={
   ABB:{lbl:'ABB',auto1_10:180,auto1_16:190,auto1_25:230,auto1_32:280,auto1_40:360,auto1_50:460,auto1_63:580,auto3_25:780,auto3_32:920,auto3_40:1100,auto3_63:1450,dif1_16_30:1100,dif1_25_30:1200,dif1_16_10:1400,dif1_25_10:1550,uzo1_25_30:780,uzo1_40_30:920,uzo1_25_10:1100,uzo3_40_30:2100,relay_1f:1800,relay_3f:4500,gofra16:18,wago_3:14,podroz:28,щ12:1100,щ24:1900,щ36:2700,щ48:3500,c_2x15:38,c_3x15:46,c_3x25:82,c_3x4:132,c_3x6:192,c_3x10:305},
   CHINT:{lbl:'CHINT',auto1_10:48,auto1_16:52,auto1_25:72,auto1_32:95,auto1_40:140,auto1_50:185,auto1_63:240,auto3_25:280,auto3_32:340,auto3_40:420,auto3_63:580,dif1_16_30:320,dif1_25_30:360,dif1_16_10:440,dif1_25_10:490,uzo1_25_30:240,uzo1_40_30:290,uzo1_25_10:360,uzo3_40_30:680,relay_1f:700,relay_3f:1900,gofra16:15,wago_3:12,podroz:20,щ12:380,щ24:720,щ36:1050,щ48:1400,c_2x15:30,c_3x15:37,c_3x25:68,c_3x4:108,c_3x6:162,c_3x10:255},
 };
-function B(){return BRANDS[PR().brand||'IEK']||BRANDS.IEK}
+function B(){
+  const base=BRANDS[PR().brand||'IEK']||BRANDS.IEK;
+  // Пользовательские цены перекрывают дефолтные
+  const userPrices=(PR().brand_prices||{})[PR().brand||'IEK']||{};
+  return {...base,...userPrices};
+}
 function cPrice(c){const b=B();return{'2x1.5':b.c_2x15,'3x1.5':b.c_3x15,'3x2.5':b.c_3x25,'3x4':b.c_3x4,'3x6':b.c_3x6,'3x10':b.c_3x10}[c]||50}
 function autoP(nom,ph){const b=B();if(ph===3)return{25:b.auto3_25,32:b.auto3_32,40:b.auto3_40,63:b.auto3_63}[nom]||b.auto3_32;return{10:b.auto1_10,16:b.auto1_16,25:b.auto1_25,32:b.auto1_32,40:b.auto1_40,50:b.auto1_50,63:b.auto1_63}[nom]||b.auto1_16}
 function difP(nom,ma){return B()[`dif1_${nom}_${ma}`]||B().dif1_16_30}
@@ -323,17 +328,16 @@ function calcLineLen(r, innerDist, ptH, isLight, qty){
   const ZAPAS=1.15, RAZDELKA=0.8;
   let drop;
   if(isLight){
-    drop=0.5;
+    // ptH=0 → потолочный светильник → запас 0.5м
+    // ptH>0 → выключатель (hStd=900) → реальный спуск от потолка
+    const hM=ptH!=null?parseFloat(ptH)/1000:0;
+    drop=hM>0 ? Math.max(0,roomH-hM) : 0.5;
   } else {
     const hM=(ptH!=null?parseFloat(ptH):200)/1000;
-    drop=roomH-hM;
+    drop=Math.max(0,roomH-hM);
   }
-  // Базовая длина: щиток→коробка + горизонталь внутри + спуск + разделка
   const base=щD+iD+drop+RAZDELKA;
-  // Поправка на изгибы: +0.3м на каждый поворот (минимум 2 поворота на любую линию)
-  const bendCorr=0.3*2;
-  // При нескольких точках на одной линии добавляем петли между ними
-  // Среднее расстояние между розетками на одной стене ~0.8м
+  const bendCorr=0.6; // 2 обязательных поворота × 0.3м
   const n=qty||1;
   const loopCorr=n>1?(n-1)*0.8:0;
   return Math.ceil((base+bendCorr+loopCorr)*ZAPAS);
@@ -368,7 +372,20 @@ function calcRoomLines(r){
     const innerDist=(r.ptDists||{})[grpKey]||0;
     const isLight=grpKey==='light';
     const qPerLine=Math.min(totalQty,maxPerLine);
-    const len=calcLineLen(r, innerDist, bg.pt?.hStd, isLight, qPerLine);
+    // Для группы light: вычисляем средневзвешенный hStd по количеству точек
+    // Выключатели (hStd=900) имеют реальный спуск, светильники (hStd=0) — запас 0.5м
+    // Берём hStd самой тяжёлой по кабелю точки (максимальный спуск = длиннее кабель)
+    let ptHForLen=bg.pt?.hStd??0;
+    if(isLight && bg.qtys.length>1){
+      // Взвешенное среднее hStd по всем точкам группы
+      const totalW=bg.qtys.reduce((s,x)=>s+x.qty,0);
+      const weightedH=bg.qtys.reduce((s,x)=>{
+        const pt=PT.find(p=>p.id===x.ptId);
+        return s+(pt?.hStd||0)*x.qty;
+      },0);
+      ptHForLen=Math.round(weightedH/totalW);
+    }
+    const len=calcLineLen(r, innerDist, ptHForLen, isLight, qPerLine);
     const workPerUnit=bg.qtys.reduce((s,x)=>{return s+(PR()['w_'+x.ptId]||200)*x.qty},0);
 
     for(let li=0;li<numLines;li++){
@@ -650,20 +667,27 @@ function openLD(gi){
 
   let h=`<div class="ld-hero" style="background:${heroColor}"><div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Линия ${gi+1} · ${щ.name}</div><div class="ld-title">${l.label}</div><div class="ld-sub">${rt.ico} ${r.name||l.roomName} · ${l.len}м · ${l.qty} точек</div></div>`;
   h+=`<div class="ld-grid"><div class="ld-c"><div class="ld-cl">Кабель</div><div class="ld-cv">ВВГнг-LS ${l.cable}</div></div><div class="ld-c"><div class="ld-cl">Длина</div><div class="ld-cv">${l.len} м</div></div><div class="ld-c" style="grid-column:1/-1"><div class="ld-cl">Защита ${l.manual_prot?'(ручная)':'(авто)'}</div><div class="ld-cv" style="font-size:13px">${protStr}</div></div></div>`;
-  // Расшифровка длины
+  // Расшифровка длины — повторяем логику calcLineLen
   const isLight=l.grp==='light';
   const innerDist=(r.ptDists||{})[l.grp]||0;
   const roomH=parseFloat(r.h)||2.7;
-  // grpKey для pwr = ptId ('pwr_boj'), для roz/light = grp name
   const ptForDrop=PT.find(p=>p.id===l.grp)||PT.find(p=>p.grp===l.grp);
-  const ptHStd=ptForDrop?.hStd??200;
-  const drop=isLight?0.5:roomH-(ptHStd/1000);
+  const ptHStd=ptForDrop?.hStd??0;
+  let drop;
+  if(isLight){
+    const hM=ptHStd/1000;
+    drop=hM>0?Math.max(0,roomH-hM):0.5;
+  } else {
+    drop=Math.max(0,roomH-((ptHStd||200)/1000));
+  }
+  const dropLbl=isLight&&ptHStd===0?'запас светильника':
+    isLight?`спуск выключателя (${roomH}м − ${(ptHStd/1000).toFixed(1)}м)`:`спуск до точки`;
   h+=`<div style="margin:8px 12px 0;background:var(--bg3);border-radius:var(--rs);padding:10px 12px;font-size:11px;color:var(--t2);line-height:1.8">
     <div style="font-weight:600;color:var(--t);margin-bottom:4px">📐 Как считалась длина:</div>
     ${r.dist||10}м (щиток→коробка)${innerDist>0?` + ${innerDist}м (коробка→точка)`:''}
-    + ${drop.toFixed(1)}м (${isLight?'запас светильника':'спуск по стене'})
+    + ${drop.toFixed(1)}м (${dropLbl})
     + 0.6м (изгибы) + 0.8м (разделка)
-    ${l.qty>1?`+ ${((l.qty-1)*0.8).toFixed(1)}м (петли между точками)`:''}
+    ${l.qty>1?`+ ${((l.qty-1)*0.8).toFixed(1)}м (петли между ${l.qty} точками)`:''}
     × 1.15 (запас) = <b>${l.len}м</b>
   </div>`;
   // Редактор защиты
@@ -1197,14 +1221,73 @@ function rSet(){
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px">
   ${Object.entries(BRANDS).map(([bk,bv])=>{const sel=pr.brand===bk;return`<div style="border:2px solid ${sel?'var(--acc)':'var(--bdr)'};border-radius:var(--rs);padding:10px;cursor:pointer;background:${sel?'var(--acc-l)':'var(--bg2)'}" onclick="setPR('brand','${bk}');rSet()"><div style="font-size:13px;font-weight:700;color:${sel?'var(--acc)':'var(--t)'}">${bv.lbl}</div><div style="font-size:10px;color:var(--t3);margin-top:2px">Авт 16А: ${bv.auto1_16}₽ · Диф 16/30мА: ${bv.dif1_16_30}₽</div></div>`}).join('')}</div>`;
 
-  // Справочник цен выбранной марки
-  h+=`<div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.06em;padding:10px 0 6px">${b.lbl} — справочник цен</div>
-  <div class="mblk">
-    <div class="mr"><span class="mn">Кабель 3×2.5 / 3×6</span><span class="mp">${b.c_3x25} / ${b.c_3x6} ₽/м</span></div>
-    <div class="mr"><span class="mn">Авт 10А / 16А / 32А</span><span class="mp">${b.auto1_10} / ${b.auto1_16} / ${b.auto1_32} ₽</span></div>
-    <div class="mr"><span class="mn">Диф C16/30мА / C16/10мА</span><span class="mp">${b.dif1_16_30} / ${b.dif1_16_10} ₽</span></div>
-    <div class="mr"><span class="mn">Щиток 12 / 24 / 36 мест</span><span class="mp">${b.щ12} / ${b.щ24} / ${b.щ36} ₽</span></div>
-    <div class="mr"><span class="mn">Гофра 16мм / WAGO-3</span><span class="mp">${b.gofra16} / ${b.wago_3} ₽</span></div>
+  // Редактируемые цены выбранной марки
+  const bk=pr.brand||'IEK';
+  const bDef=BRANDS[bk]||BRANDS.IEK; // дефолтные
+  const bUser=(pr.brand_prices||{})[bk]||{}; // пользовательские
+  const bEff={...bDef,...bUser}; // итоговые
+
+  // Проверяем есть ли изменения
+  const hasChanges=Object.keys(bUser).length>0;
+
+  h+=`<div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.06em;padding:10px 0 6px">
+    ${bEff.lbl} — цены (₽)
+    ${hasChanges?`<span style="font-size:9px;background:var(--or-l);color:var(--or);border-radius:10px;padding:2px 7px;margin-left:6px;font-weight:600;text-transform:none">изменены</span>`:''}
+  </div>
+  <div style="font-size:11px;color:var(--t3);margin-bottom:6px;line-height:1.5">
+    Введи реальные цены из магазина — они сохранятся для этой марки.<br>
+    Серые = дефолтные (ориентировочные), белые = твои.
+  </div>`;
+
+  // Поля для редактирования — ключевые позиции
+  const bFields=[
+    {sec:'Кабель ВВГнг-LS (₽/м)'},
+    {k:'c_2x15',l:'2×1.5 мм²'},{k:'c_3x15',l:'3×1.5 мм²'},{k:'c_3x25',l:'3×2.5 мм²'},
+    {k:'c_3x4',l:'3×4 мм²'},{k:'c_3x6',l:'3×6 мм²'},{k:'c_3x10',l:'3×10 мм²'},
+    {sec:'Автоматы однофазные (₽/шт)'},
+    {k:'auto1_10',l:'C10А'},{k:'auto1_16',l:'C16А'},{k:'auto1_25',l:'C25А'},
+    {k:'auto1_32',l:'C32А'},{k:'auto1_40',l:'C40А'},{k:'auto1_63',l:'C63А'},
+    {sec:'Автоматы трёхфазные (₽/шт)'},
+    {k:'auto3_25',l:'C25А 3ф'},{k:'auto3_32',l:'C32А 3ф'},{k:'auto3_40',l:'C40А 3ф'},{k:'auto3_63',l:'C63А 3ф'},
+    {sec:'Дифавтоматы однофазные (₽/шт)'},
+    {k:'dif1_16_30',l:'C16А / 30мА'},{k:'dif1_25_30',l:'C25А / 30мА'},
+    {k:'dif1_16_10',l:'C16А / 10мА (ванная)'},{k:'dif1_25_10',l:'C25А / 10мА'},
+    {sec:'УЗО однофазные (₽/шт)'},
+    {k:'uzo1_25_30',l:'25А / 30мА'},{k:'uzo1_40_30',l:'40А / 30мА'},{k:'uzo1_25_10',l:'25А / 10мА'},
+    {sec:'Реле напряжения (₽/шт)'},
+    {k:'relay_1f',l:'Однофазное'},{k:'relay_3f',l:'Трёхфазное'},
+    {sec:'Щитки (₽/шт)'},
+    {k:'щ12',l:'12 мест'},{k:'щ24',l:'24 места'},{k:'щ36',l:'36 мест'},{k:'щ48',l:'48 мест'},
+    {sec:'Монтажные материалы'},
+    {k:'gofra16',l:'Гофра ПВХ 16мм, ₽/м'},{k:'wago_3',l:'WAGO 3-пров., ₽/шт'},{k:'podroz',l:'Подрозетник, ₽/шт'},
+  ];
+
+  let inBP=false;
+  bFields.forEach(f=>{
+    if(f.sec){
+      if(inBP)h+='</div>';
+      h+=`<div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;padding:10px 0 4px">${f.sec}</div><div class="mblk">`;
+      inBP=true;return;
+    }
+    const defVal=bDef[f.k]||0;
+    const userVal=bUser[f.k];
+    const isChanged=userVal!=null;
+    const displayVal=isChanged?userVal:defVal;
+    h+=`<div class="sf-row" style="${isChanged?'background:var(--bg2)':'background:var(--bg3)'}">
+      <span class="sf-lbl" style="${isChanged?'color:var(--acc);font-weight:600':''}">${f.l}</span>
+      <span style="font-size:10px;color:var(--t3);margin-right:2px">${isChanged?`(деф:${defVal})`:'деф'}</span>
+      <input type="number" class="sf-inp" value="${displayVal}" min="0" step="1"
+        style="background:${isChanged?'var(--bg2)':'var(--bg3)'}"
+        oninput="setBrandPrice('${bk}','${f.k}',this.value,${defVal})">
+      <span style="font-size:11px;color:var(--t3)">₽</span>
+    </div>`;
+  });
+  if(inBP)h+='</div>';
+
+  h+=`<div style="margin-top:8px;display:flex;gap:8px">
+    <button class="btn" style="flex:1;font-size:11px" onclick="resetBrandPrices('${bk}')">
+      Сбросить цены ${bEff.lbl} к дефолтным
+    </button>
   </div>`;
 
   // Расценки на работу
@@ -1264,7 +1347,29 @@ function rSet(){
   <div style="height:8px"></div>`;
   document.getElementById('set-c').innerHTML=h;
 }
-function updCM(i,k,val){if(!PR_MAP[CUR])return;if(!PR_MAP[CUR].custom_mats)PR_MAP[CUR].custom_mats=[];PR_MAP[CUR].custom_mats[i][k]=val}
+function setBrandPrice(bk,key,val,defVal){
+  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_WORK};
+  if(!PR_MAP[CUR].brand_prices)PR_MAP[CUR].brand_prices={};
+  if(!PR_MAP[CUR].brand_prices[bk])PR_MAP[CUR].brand_prices[bk]={};
+  const num=parseFloat(val)||0;
+  // Если значение равно дефолтному — удаляем переопределение (экономим место)
+  if(num===defVal){
+    delete PR_MAP[CUR].brand_prices[bk][key];
+    if(!Object.keys(PR_MAP[CUR].brand_prices[bk]).length)
+      delete PR_MAP[CUR].brand_prices[bk];
+  } else {
+    PR_MAP[CUR].brand_prices[bk][key]=num;
+  }
+  save();
+}
+
+function resetBrandPrices(bk){
+  if(!confirm(`Сбросить все цены ${BRANDS[bk]?.lbl||bk} к дефолтным?`))return;
+  if(PR_MAP[CUR]?.brand_prices?.[bk])
+    delete PR_MAP[CUR].brand_prices[bk];
+  save();rSet();
+}
+if(!PR_MAP[CUR])return;if(!PR_MAP[CUR].custom_mats)PR_MAP[CUR].custom_mats=[];PR_MAP[CUR].custom_mats[i][k]=val}
 function addCM(){if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_WORK};if(!PR_MAP[CUR].custom_mats)PR_MAP[CUR].custom_mats=[];PR_MAP[CUR].custom_mats.push({lbl:'',price:0,qty:1,qty_mode:'шт'});save();rSet()}
 function delCM(i){if(PR_MAP[CUR]?.custom_mats)PR_MAP[CUR].custom_mats.splice(i,1);save();rSet()}
 function saveSet(){save();const b=event.target;b.textContent='Сохранено ✓';b.style.background='var(--gr)';setTimeout(()=>{b.textContent='Сохранить';b.style.background=''},1500)}
