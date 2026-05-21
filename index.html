@@ -646,32 +646,122 @@ function selType(id){curType=id;document.querySelectorAll('.tc').forEach(el=>el.
 // curPtDists хранит расстояния от распредкоробки до групп точек
 let curPtDists={};
 
+// Группы точек для форм
+const PT_GRPS=['roz','rozIP','light','pwr'];
+const GRPLBL_FULL={
+  roz:'Розетки',rozIP:'Розетки влажные',light:'Освещение',pwr:'Мощные (отд. линия)'
+};
+
+// Описание поля расстояния для каждой группы
+const DIST_HINT={
+  roz:'До дальней розетки, м',
+  rozIP:'До дальней розетки IP44, м',
+  light:'До дальнего светильника, м',
+};
+
 function rPtsList(){
   const cl=client();
   const savedDists=eR!=null?((cl?.комнаты||[])[eR]?.ptDists||{}):{};
   curPtDists={...savedDists};
-  const grps={roz:[],rozIP:[],light:[],pwr:[]};
-  PT.forEach(pt=>grps[pt.grp]?.push(pt));
-  // Группируем grpKey для отображения поля расстояния
-  const grpKeys={}; // grpKey -> первый ptId
-  PT.forEach(pt=>{const k=pt.grp==='pwr'?'pwr_'+pt.id:pt.grp;if(!grpKeys[k])grpKeys[k]=pt.id});
+
+  // Собираем точки по группам
+  const byGrp={roz:[],rozIP:[],light:[],pwr:{}};
+  getPT().forEach(pt=>{
+    if(pt.grp==='pwr') byGrp.pwr[pt.id]=pt;
+    else if(byGrp[pt.grp]) byGrp[pt.grp].push(pt);
+  });
+
   let h='';
-  Object.entries(grps).forEach(([grp,pts])=>{
-    if(!pts.length)return;
-    h+=`<div class="slabel" style="margin-top:12px">${GRPLBL[grp]||grp}</div>`;
+
+  // ── РОЗЕТКИ (одна группа — одно расстояние) ──
+  ['roz','rozIP'].forEach(grp=>{
+    const pts=byGrp[grp];
+    if(!pts||!pts.length)return;
+    const totalInGrp=pts.reduce((s,pt)=>s+(curPts[pt.id]||0),0);
+    const distVal=curPtDists[grp]||'';
+    h+=`<div class="slabel" style="margin-top:12px">${GRPLBL_FULL[grp]}</div>`;
+    // Поле расстояния — всегда видимое над группой
+    h+=`<div style="background:var(--acc-l);border:1.5px solid var(--acc);border-radius:var(--rs);padding:8px 12px;margin-bottom:6px;display:flex;align-items:center;gap:8px">
+      <span style="flex:1;font-size:11px;color:var(--acc);font-weight:500">${DIST_HINT[grp]||'До дальней точки, м'}</span>
+      <input type="number" id="dist_${grp}"
+        style="width:70px;background:var(--bg2);border:1.5px solid var(--acc);border-radius:6px;padding:5px 8px;font-size:13px;font-weight:600;text-align:center;outline:none;color:var(--acc)"
+        placeholder="0" value="${distVal}" min="0" step="0.5"
+        oninput="curPtDists['${grp}']=parseFloat(this.value)||0">
+      <span style="font-size:11px;color:var(--acc)">м</span>
+    </div>`;
     h+=`<div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;box-shadow:var(--shd)">`;
     pts.forEach(pt=>{
       const q=curPts[pt.id]||0;
-      const grpKey=pt.grp==='pwr'?'pwr_'+pt.id:pt.grp;
-      // Показываем поле расстояния только для первого типа в группе (roz, light) или для каждого pwr
-      const showDist=pt.grp==='pwr'||(grpKeys[grpKey]===pt.id);
-      const savedDist=curPtDists[grpKey]||'';
       h+=`<div class="ptrow" style="padding:9px 0">
         <div class="ptico">${pt.ico}</div>
         <div class="ptlb">
           <div>${pt.lbl}</div>
           <div class="ptcb">ВВГнг ${pt.cable} · h=${pt.hStd}мм${pt.needUzo?' · УЗО авто':''}</div>
-          ${showDist&&q>0?`<div style="margin-top:5px;display:flex;align-items:center;gap:5px"><span style="font-size:10px;color:var(--t3)">От коробки, м:</span><input type="number" style="width:58px;background:var(--bg3);border:1.5px solid var(--bdr);border-radius:6px;padding:3px 6px;font-size:12px;outline:none" placeholder="0" value="${savedDist}" min="0" step=".5" oninput="curPtDists['${grpKey}']=parseFloat(this.value)||0"></div>`:''}
+        </div>
+        <div class="qc">
+          <button class="qb" onclick="chQD('${pt.id}','${grp}',-1)" ${q===0?'disabled':''}>−</button>
+          <span class="qv" id="q_${pt.id}">${q}</span>
+          <button class="qb" onclick="chQD('${pt.id}','${grp}',1)">+</button>
+        </div>
+      </div>`;
+    });
+    h+=`</div>`;
+  });
+
+  // ── ОСВЕЩЕНИЕ (одна группа — одно расстояние) ──
+  const lightPts=byGrp.light||[];
+  if(lightPts.length){
+    const distVal=curPtDists['light']||'';
+    h+=`<div class="slabel" style="margin-top:12px">${GRPLBL_FULL.light}</div>`;
+    h+=`<div style="background:var(--acc-l);border:1.5px solid var(--acc);border-radius:var(--rs);padding:8px 12px;margin-bottom:6px;display:flex;align-items:center;gap:8px">
+      <span style="flex:1;font-size:11px;color:var(--acc);font-weight:500">${DIST_HINT.light}</span>
+      <input type="number" id="dist_light"
+        style="width:70px;background:var(--bg2);border:1.5px solid var(--acc);border-radius:6px;padding:5px 8px;font-size:13px;font-weight:600;text-align:center;outline:none;color:var(--acc)"
+        placeholder="0" value="${distVal}" min="0" step="0.5"
+        oninput="curPtDists['light']=parseFloat(this.value)||0">
+      <span style="font-size:11px;color:var(--acc)">м</span>
+    </div>`;
+    h+=`<div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;box-shadow:var(--shd)">`;
+    lightPts.forEach(pt=>{
+      const q=curPts[pt.id]||0;
+      h+=`<div class="ptrow" style="padding:9px 0">
+        <div class="ptico">${pt.ico}</div>
+        <div class="ptlb">
+          <div>${pt.lbl}</div>
+          <div class="ptcb">ВВГнг ${pt.cable} · h=${pt.hStd}мм</div>
+        </div>
+        <div class="qc">
+          <button class="qb" onclick="chQD('${pt.id}','light',-1)" ${q===0?'disabled':''}>−</button>
+          <span class="qv" id="q_${pt.id}">${q}</span>
+          <button class="qb" onclick="chQD('${pt.id}','light',1)">+</button>
+        </div>
+      </div>`;
+    });
+    h+=`</div>`;
+  }
+
+  // ── МОЩНЫЕ (каждый прибор — своё расстояние) ──
+  const pwrPts=Object.values(byGrp.pwr||{});
+  if(pwrPts.length){
+    h+=`<div class="slabel" style="margin-top:12px">${GRPLBL_FULL.pwr}</div>`;
+    h+=`<div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;box-shadow:var(--shd)">`;
+    pwrPts.forEach(pt=>{
+      const q=curPts[pt.id]||0;
+      const grpKey=pt.id; // для pwr grpKey = ptId
+      const distVal=curPtDists[grpKey]||'';
+      h+=`<div class="ptrow" style="padding:9px 0;flex-wrap:wrap">
+        <div class="ptico">${pt.ico}</div>
+        <div class="ptlb" style="flex:1">
+          <div>${pt.lbl}</div>
+          <div class="ptcb">ВВГнг ${pt.cable} · h=${pt.hStd}мм${pt.needUzo?' · УЗО авто':''}</div>
+          ${q>0?`<div style="margin-top:5px;display:flex;align-items:center;gap:5px">
+            <span style="font-size:10px;color:var(--t3)">До прибора от коробки, м:</span>
+            <input type="number" id="dist_${grpKey}"
+              style="width:58px;background:var(--bg3);border:1.5px solid var(--bdr);border-radius:6px;padding:3px 6px;font-size:12px;outline:none;text-align:center"
+              placeholder="0" value="${distVal}" min="0" step="0.5"
+              oninput="curPtDists['${grpKey}']=parseFloat(this.value)||0">
+            <span style="font-size:10px;color:var(--t3)">м</span>
+          </div>`:''}
         </div>
         <div class="qc">
           <button class="qb" onclick="chQD('${pt.id}','${grpKey}',-1)" ${q===0?'disabled':''}>−</button>
@@ -681,18 +771,20 @@ function rPtsList(){
       </div>`;
     });
     h+=`</div>`;
-  });
+  }
+
   document.getElementById('pts-c').innerHTML=h;
 }
 
 function chQD(id,grpKey,d){
-  // Сохраняем введённые расстояния из DOM перед перерисовкой
-  document.querySelectorAll('[oninput^="curPtDists"]').forEach(inp=>{
-    const m=inp.getAttribute('oninput').match(/curPtDists\['(.+?)'\]/);
-    if(m)curPtDists[m[1]]=parseFloat(inp.value)||0;
+  // Сохраняем ВСЕ поля расстояний из DOM перед перерисовкой
+  document.querySelectorAll('input[id^="dist_"]').forEach(inp=>{
+    const k=inp.id.replace('dist_','');
+    curPtDists[k]=parseFloat(inp.value)||0;
   });
   chQ(id,d);
   rPtsList();
+  // Восстанавливаем фокус если нужно
 }
 function chQ(id,d){
   curPts[id]=Math.max(0,(curPts[id]||0)+d);
