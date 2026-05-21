@@ -175,6 +175,26 @@ html,body{height:100%;background:var(--bg);color:var(--t);font-family:var(--sans
 .empty{text-align:center;padding:52px 20px}
 .empty-i{font-size:44px;margin-bottom:14px;opacity:.25}
 .empty-t{font-size:13px;color:var(--t3);line-height:1.7}
+/* ЩИТОК SCHEME */
+.щ-scheme{margin:12px;background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;box-shadow:var(--shd)}
+.щ-rein{background:#1e293b;border-radius:var(--rs);margin:10px;padding:10px 8px;display:flex;flex-wrap:wrap;gap:4px;align-items:flex-start}
+.щ-mod{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer}
+.щ-mod:active{opacity:.7}
+.щ-auto{border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0}
+.щ-lbl{font-size:8px;color:#94a3b8;text-align:center;max-width:36px;line-height:1.2;word-break:break-all}
+.щ-sep{width:1px;background:rgba(255,255,255,.1);height:40px;margin:0 2px;align-self:center}
+/* LINE DETAIL */
+.ld-hero{background:var(--acc);border-radius:var(--r);margin:12px;padding:16px;box-shadow:var(--shd2)}
+.ld-title{font-size:16px;font-weight:700;color:#fff;margin-bottom:4px}
+.ld-sub{font-size:12px;color:rgba(255,255,255,.75)}
+.ld-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 12px}
+.ld-card{background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--rs);padding:11px;box-shadow:var(--shd)}
+.ld-card-l{font-size:10px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.ld-card-v{font-size:15px;font-weight:700;color:var(--t)}
+.ld-nuance{background:var(--or-l);border:1px solid rgba(217,119,6,.2);border-radius:var(--rs);margin:10px 12px 0;padding:11px 13px}
+.ld-nuance-t{font-size:11px;font-weight:700;color:var(--or);margin-bottom:4px}
+.ld-nuance-i{font-size:11px;color:#78350f;line-height:1.7}
+.ld-pts{margin:10px 12px 0}
 ::-webkit-scrollbar{width:0}
 </style>
 </head>
@@ -190,6 +210,8 @@ html,body{height:100%;background:var(--bg);color:var(--t);font-family:var(--sans
     <div class="scr" id="s-rd"><div id="rd-c"></div></div>
     <div class="scr" id="s-smeta"><div id="smeta-c"></div></div>
     <div class="scr" id="s-lines"><div id="lines-c"></div></div>
+    <div class="scr" id="s-щиток"><div id="щиток-c"></div></div>
+    <div class="scr" id="s-line-detail"><div id="line-detail-c"></div></div>
     <div class="scr" id="s-calc"><div id="calc-c" style="padding:12px"></div></div>
     <div class="scr" id="s-check"><div id="check-c"></div></div>
     <div class="scr" id="s-set"><div id="set-c"></div></div>
@@ -772,39 +794,233 @@ function rSmeta(){
 }
 function clearObj(){if(confirm('Сбросить весь объект?')){DB={щитки:[],комнаты:[],checklist:null,lines_done:{}};sDB();rSmeta()}}
 
-// ═══ ПРОЗВОНКА ═══
+
+// ═══ АВТОЩИТОК — план защитных устройств ═══
+function buildЩитокPlan(щитокId){
+  const lines=getAllLines().filter(l=>l.щитокId===щитокId);
+  const щ=DB.щитки[щитокId]||{};
+  const isBath=(ln)=>{const r=DB.комнаты.find(c=>c.name===ln.room);return r&&r.type==='bath'};
+  const autoNom=(cable)=>({'2x1.5':10,'3x1.5':10,'3x2.5':16,'3x4':25,'3x6':32,'3x10':50}[cable]||16);
+  const groups=[];
+  // Линии без УЗО — обычный автомат
+  lines.filter(l=>!l.need_uzo).forEach(l=>{
+    groups.push({type:'auto',nom:autoNom(l.cable),line:l,label:l.label});
+  });
+  // Ванная с УЗО — дифавтомат 10мА
+  lines.filter(l=>l.need_uzo&&isBath(l)).forEach(l=>{
+    groups.push({type:'dif',nom:autoNom(l.cable),ma:10,line:l,label:l.label});
+  });
+  // Мощные с УЗО не в ванной — дифавтомат 30мА
+  lines.filter(l=>l.need_uzo&&l.is_pwr&&!isBath(l)).forEach(l=>{
+    groups.push({type:'dif',nom:autoNom(l.cable),ma:30,line:l,label:l.label});
+  });
+  // Розеточные группы с УЗО не в ванной → одно УЗО на 4 линии
+  const rozUzo=lines.filter(l=>l.need_uzo&&!l.is_pwr&&!isBath(l));
+  for(let i=0;i<rozUzo.length;i+=4){
+    const chunk=rozUzo.slice(i,i+4);
+    groups.push({type:'uzo_group',ma:30,lines:chunk,label:`УЗО гр.${Math.floor(i/4)+1}`});
+    chunk.forEach(l=>groups.push({type:'auto_sub',nom:autoNom(l.cable),line:l,label:l.label}));
+  }
+  let slots=1;
+  groups.forEach(g=>{
+    if(g.type==='auto'||g.type==='auto_sub')slots+=1;
+    else if(g.type==='dif')slots+=2;
+    else if(g.type==='uzo_group')slots+=2;
+  });
+  return {groups,slots,lines,name:щ.name||'Щиток'};
+}
+
+// Нюансы по каждому типу линии
+function getLineNuances(line){
+  const n=[];
+  const k=line.key||'';
+  const ids=line.ids||[];
+  if(k.includes('led')||ids.includes('led'))
+    n.push('LED-лента: нужен блок питания 12В или 24В в сухом доступном месте. Мощность БП: длина × Вт/м × 1.2 (запас). Для 5м × 14Вт/м → БП от 90Вт.');
+  if(k.includes('pwr_kond'))
+    n.push('Кондиционер: розетка для внутреннего блока 220В. Наружный блок — кабель 3×2.5 отдельной линией. Точку подключения согласовать с монтажниками кондея.');
+  if(k.includes('pwr_tp'))
+    n.push('Тёплый пол: терморегулятор в подрозетнике 900мм от пола. Датчик температуры — в гофре в стяжке. Нагрузка ~150Вт/м², учитывать при выборе автомата.');
+  if(k.includes('pwr_var'))
+    n.push('Варочная 380В: кабель 3×6мм², автомат 32А, УЗО 30мА. Подключение через клеммную колодку или вилку CEE 32А. Отдельная линия, не объединять!');
+  if(k.includes('pwr_boj'))
+    n.push('Бойлер: розетка IP44 вне зоны прямого попадания воды. В ванной — УЗО 10мА. Запас кабеля у прибора 40см.');
+  if(k.includes('pwr_stir'))
+    n.push('Стиральная машина: розетка IP44, высота 900–1000мм. В ванной — вне зоны 1 (дальше 0.6м от ванны/душа).');
+  if(ids.includes('vklpr')||k.includes('vklpr'))
+    n.push('Проходной выключатель: кабель 3×1.5 (3 жилы). Одна жила — общая, две — коммутирующие. Для 3 выключателей нужен промежуточный реле.');
+  if(ids.includes('trak'))
+    n.push('Трековые споты: питание в одну точку на трек. До 1.5кВт — 2×1.5 достаточно. При мощной нагрузке — 3×2.5.');
+  return n;
+}
+
+// ═══ ПРОЗВОНКА (обновлённая) ═══
 function rLines(){
-  showScr('s-lines');
+  showScr('s-lines');setBar('lines');
   const el=document.getElementById('lines-c');
   const lines=getAllLines();
   if(!lines.length){el.innerHTML=`<div class="empty"><div class="empty-i">🔌</div><div class="empty-t">Добавьте комнаты с точками</div></div>`;return}
   const done=lines.filter(l=>DB.lines_done[l.key+'_'+l.room]).length;
   const pct=Math.round(done/lines.length*100);
+  let h=`<div style="padding:12px 12px 0;display:flex;gap:8px">
+    <div id="tab-proz" style="flex:1;text-align:center;padding:9px;border-radius:var(--rs);background:var(--acc);color:#fff;cursor:pointer;font-size:12px;font-weight:600" onclick="showLinesTab('proz')">Прозвонка</div>
+    <div id="tab-щит" style="flex:1;text-align:center;padding:9px;border-radius:var(--rs);background:var(--bg2);color:var(--t2);cursor:pointer;font-size:12px;font-weight:600;border:1px solid var(--bdr)" onclick="showLinesTab('щит')">Схема щитка</div>
+  </div>`;
+  h+=`<div id="tab-proz-c">`;
+  h+=`<div class="lprog" style="margin-top:12px"><span>Прозвонено: ${done}/${lines.length}</span><span style="color:var(--gr);font-weight:600">${pct}%</span></div>
+    <div class="lbar"><div class="lbar-f" style="width:${pct}%"></div></div>`;
   const byЩ={};
   lines.forEach(l=>{const n=(DB.щитки[l.щитокId]||{name:'?'}).name;if(!byЩ[n])byЩ[n]=[];byЩ[n].push(l)});
-  let h=`<div class="lprog"><span>Прозвонено: ${done}/${lines.length}</span><span style="color:var(--gr);font-weight:600">${pct}%</span></div>
-    <div class="lbar"><div class="lbar-f" style="width:${pct}%"></div></div>`;
+  const autoNomF=(c)=>({'2x1.5':10,'3x1.5':10,'3x2.5':16,'3x4':25,'3x6':32,'3x10':50}[c]||16);
   Object.entries(byЩ).forEach(([щName,lns])=>{
     h+=`<div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.06em;padding:12px 14px 5px">⚡ ${щName}</div>`;
     h+=`<div class="mblk" style="margin:0 12px 12px">`;
     lns.forEach(l=>{
       const dk=l.key+'_'+l.room;const dn=DB.lines_done[dk];
-      h+=`<div class="lrow ${dn?'done':''}" onclick="toggleLine('${dk}')">
-        <div class="lchk">${dn?'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>':''}</div>
-        <div style="flex:1">
-          <div class="lname">${l.label}</div>
-          <div class="lcable">ВВГнг ${l.cable} · ${l.len}м · ${l.qty} точек</div>
+      const gi=lines.indexOf(l);
+      const prot=l.need_uzo?(l.is_pwr?`диф C${autoNomF(l.cable)}А`:`УЗО+авт C${autoNomF(l.cable)}А`):`авт C${autoNomF(l.cable)}А`;
+      h+=`<div class="lrow ${dn?'done':''}" style="gap:8px" onclick="openLineDetail(${gi})">
+        <div class="lchk" onclick="event.stopPropagation();toggleLine('${dk}')">${dn?'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>':''}</div>
+        <div style="flex:1;min-width:0">
+          <div class="lname" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Л${gi+1}. ${l.label}</div>
+          <div class="lcable">ВВГнг ${l.cable} · ${l.len}м · ${prot}</div>
         </div>
-        ${l.need_uzo?'<span class="b br" style="font-size:9px">УЗО!</span>':''}
+        <span style="color:var(--t3);font-size:18px;flex-shrink:0">›</span>
       </div>`;
     });
     h+='</div>';
   });
   h+=`<div style="padding:0 12px 8px"><button class="btn" style="width:100%" onclick="resetLines()">Сбросить прозвонку</button></div>`;
+  h+=`</div><div id="tab-щит-c" style="display:none"></div>`;
   el.innerHTML=h;
+}
+
+function showLinesTab(tab){
+  document.getElementById('tab-proz-c').style.display=tab==='proz'?'block':'none';
+  document.getElementById('tab-щит-c').style.display=tab==='щит'?'block':'none';
+  const a=document.getElementById('tab-proz'),b=document.getElementById('tab-щит');
+  a.style.background=tab==='proz'?'var(--acc)':'var(--bg2)';a.style.color=tab==='proz'?'#fff':'var(--t2)';a.style.border=tab==='proz'?'none':'1px solid var(--bdr)';
+  b.style.background=tab==='щит'?'var(--acc)':'var(--bg2)';b.style.color=tab==='щит'?'#fff':'var(--t2)';b.style.border=tab==='щит'?'none':'1px solid var(--bdr)';
+  if(tab==='щит')rЩитокScheme();
 }
 function toggleLine(dk){DB.lines_done[dk]=!DB.lines_done[dk];sDB();rLines()}
 function resetLines(){if(confirm('Сбросить все отметки?')){DB.lines_done={};sDB();rLines()}}
+
+// ═══ ДЕТАЛЬНЫЙ ЭКРАН ЛИНИИ ═══
+function openLineDetail(gi){
+  const lines=getAllLines();const l=lines[gi];if(!l)return;
+  const щ=DB.щитки[l.щитокId]||{name:'?'};
+  const room=DB.комнаты.find(r=>r.name===l.room)||{};
+  const rt=ROOM_TYPES.find(t=>t.id===room.type)||ROOM_TYPES[0];
+  const autoNomF=(c)=>({'2x1.5':10,'3x1.5':10,'3x2.5':16,'3x4':25,'3x6':32,'3x10':50}[c]||16);
+  const nom=autoNomF(l.cable);
+  const dk=l.key+'_'+l.room;const dn=DB.lines_done[dk];
+  const isBathR=room.type==='bath';
+  const uzoMa=isBathR?10:30;
+  const protect=l.need_uzo?(l.is_pwr?`Дифавтомат C${nom}А / ${uzoMa}мА`:`УЗО ${uzoMa}мА + автомат C${nom}А`):`Автомат C${nom}А`;
+  const nuances=getLineNuances(l);
+  // Что входит
+  const ptDetails=(l.ids||[]).map(pid=>{
+    const pt=PT.find(p=>p.id===pid);if(!pt)return null;
+    const qty=room.pts?.[pid]||0;return qty?`${pt.ico} ${pt.lbl} — ${qty} шт`:null;
+  }).filter(Boolean);
+  const heroColor=l.need_uzo?'var(--rd)':'var(--acc)';
+  let h=`<div class="ld-hero" style="background:${heroColor}">
+    <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Линия ${gi+1} · ${щ.name}</div>
+    <div class="ld-title">${l.label}</div>
+    <div class="ld-sub">${rt.ico} ${room.name||l.room} · ${l.len}м от щитка · ${l.qty} точек</div>
+  </div>
+  <div class="ld-grid">
+    <div class="ld-card"><div class="ld-card-l">Кабель</div><div class="ld-card-v">ВВГнг-LS ${l.cable}</div></div>
+    <div class="ld-card"><div class="ld-card-l">Длина с запасом</div><div class="ld-card-v">${l.len} м</div></div>
+    <div class="ld-card" style="grid-column:1/-1"><div class="ld-card-l">Защита в щитке</div><div class="ld-card-v" style="font-size:13px">${protect}</div></div>
+    <div class="ld-card"><div class="ld-card-l">Щиток</div><div class="ld-card-v" style="font-size:13px">${щ.name}</div></div>
+    <div class="ld-card"><div class="ld-card-l">Расст. до щитка</div><div class="ld-card-v">${room.dist||10} м</div></div>
+  </div>`;
+  if(ptDetails.length)
+    h+=`<div class="ld-pts"><div class="ssec-t" style="margin-bottom:6px">Состав линии</div>
+      <div class="mblk">${ptDetails.map(p=>`<div class="mr"><span class="mn">${p}</span></div>`).join('')}</div></div>`;
+  if(nuances.length)
+    h+=`<div class="ld-nuance"><div class="ld-nuance-t">⚙ Нюансы монтажа</div>
+      <div class="ld-nuance-i">${nuances.join('<br><br>')}</div></div>`;
+  h+=`<div style="padding:12px"><button class="btn ${dn?'':'btn-p'}" style="width:100%" onclick="toggleLine('${dk}');pop()">
+    ${dn?'✓ Прозвонено — снять отметку':'Отметить как прозвонено'}</button></div><div style="height:8px"></div>`;
+  document.getElementById('line-detail-c').innerHTML=h;
+  push('s-line-detail',`Линия ${gi+1}`);
+}
+
+// ═══ СХЕМА ЩИТКА ═══
+function rЩитокScheme(){
+  const el=document.getElementById('tab-щит-c');
+  if(!DB.щитки.length){el.innerHTML=`<div class="empty"><div class="empty-i">⚡</div><div class="empty-t">Щитки не добавлены</div></div>`;return}
+  let h='';
+  DB.щитки.forEach((щ,i)=>{
+    const plan=buildЩитокPlan(i);
+    const boxSize=plan.slots<=12?'12':plan.slots<=24?'24':'36';
+    const totalKw=DB.комнаты.filter(r=>r.щитокId===i).reduce((s,r)=>
+      s+Object.entries(r.pts||{}).reduce((ps,[pid,qty])=>{
+        const pt=PT.find(p=>p.id===pid);return ps+(pt?.pwr_kw||0.3)*qty;
+      },0),0);
+    const vvodNom=totalKw<=15?40:totalKw<=22?50:63;
+    h+=`<div style="margin:12px 12px 4px;font-size:12px;font-weight:600;color:var(--t2)">⚡ ${plan.name} · ${plan.slots} мест · Бокс ${boxSize}</div>`;
+    h+=`<div class="щ-scheme">
+      <div style="padding:8px 12px;font-size:11px;color:var(--t3);border-bottom:1px solid var(--bdr)">Нажмите на модуль → детали линии</div>
+      <div class="щ-rein">`;
+    // Вводной
+    h+=mkMod('auto',`C${vvodNom}А`,'Ввод','#1e40af',null,2);
+    h+=`<div class="щ-sep"></div>`;
+    const allLns=getAllLines().filter(l=>l.щитокId===i);
+    plan.groups.forEach(g=>{
+      if(g.type==='auto'){
+        const gi=getAllLines().indexOf(g.line);
+        h+=mkMod('auto',`C${g.nom}А`,shortLbl(g.line),'#1e40af',`openLineDetail(${gi})`);
+      } else if(g.type==='dif'){
+        const gi=getAllLines().indexOf(g.line);
+        h+=mkMod('dif',`C${g.nom}/${g.ma}мА`,shortLbl(g.line),'#166534',`openLineDetail(${gi})`,2);
+      } else if(g.type==='uzo_group'){
+        h+=mkMod('uzo',`УЗО ${g.ma}мА`,`гр.`,`#b45309`,null,2);
+      } else if(g.type==='auto_sub'){
+        const gi=getAllLines().indexOf(g.line);
+        h+=mkMod('sub',`C${g.nom}А`,shortLbl(g.line),'#374151',`openLineDetail(${gi})`);
+      }
+    });
+    h+=`</div>`;
+    // Легенда
+    h+=`<div style="padding:8px 12px;display:flex;gap:12px;flex-wrap:wrap;border-top:1px solid var(--bdr)">
+      <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--t3)"><div style="width:10px;height:10px;border-radius:2px;background:#1e40af"></div>Автомат</div>
+      <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--t3)"><div style="width:10px;height:10px;border-radius:2px;background:#166534"></div>Дифавтомат</div>
+      <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--t3)"><div style="width:10px;height:10px;border-radius:2px;background:#b45309"></div>УЗО</div>
+      <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--t3)"><div style="width:10px;height:10px;border-radius:2px;background:#374151"></div>Авт. под УЗО</div>
+    </div>`;
+    h+=`</div>`; // щ-scheme
+    // Список содержимого
+    h+=`<div style="margin:8px 12px 0"><div class="ssec-t" style="margin-bottom:6px">Состав щитка</div><div class="mblk">`;
+    h+=`<div class="mr"><span class="mn">Вводной автомат C${vvodNom}А</span><span class="mq">1 шт</span><span class="mp" style="color:var(--t2)">${fmt(vvodNom<=40?PR.m_avto*2:PR.m_avto*2.5)} ₽</span></div>`;
+    const acnt=plan.groups.filter(g=>g.type==='auto'||g.type==='auto_sub').length;
+    const dcnt=plan.groups.filter(g=>g.type==='dif').length;
+    const ucnt=plan.groups.filter(g=>g.type==='uzo_group').length;
+    if(acnt)h+=`<div class="mr"><span class="mn">Автоматы</span><span class="mq">${acnt} шт</span><span class="mp" style="color:var(--t2)">${fmt(acnt*PR.m_avto)} ₽</span></div>`;
+    if(dcnt)h+=`<div class="mr"><span class="mn">Дифавтоматы</span><span class="mq">${dcnt} шт</span><span class="mp" style="color:var(--t2)">${fmt(dcnt*PR.m_dif)} ₽</span></div>`;
+    if(ucnt)h+=`<div class="mr"><span class="mn">УЗО 30мА</span><span class="mq">${ucnt} шт</span><span class="mp" style="color:var(--t2)">${fmt(ucnt*PR.m_dif)} ₽</span></div>`;
+    h+=`<div class="mr" style="background:var(--acc-l)"><span class="mn" style="color:var(--acc);font-weight:600">Бокс: ${boxSize} мест · занято ~${plan.slots}</span></div>`;
+    h+=`</div></div><div style="height:12px"></div>`;
+  });
+  el.innerHTML=h;
+}
+
+function mkMod(type,nom,lbl,color,onclick,w=1){
+  const W=w===2?74:34;const oc=onclick?`onclick="${onclick}"`:'';const cur=onclick?'cursor:pointer':'';
+  return `<div class="щ-mod" style="width:${W}px;${cur}" ${oc}>
+    <div class="щ-auto" style="width:${W}px;height:44px;background:${color};border-radius:5px;font-size:${w===2?'8px':'9px'};text-align:center;padding:2px;flex-direction:column;gap:1px">
+      <span style="font-size:7px;opacity:.75">${type==='dif'?'ДИФ':type==='uzo'?'УЗО':type==='sub'?'АВТ':'АВТ'}</span>
+      <span style="font-size:${w===2?'9px':'10px'};font-weight:700;line-height:1">${nom.replace('мА','\nmА')}</span>
+    </div>
+    <div class="щ-lbl">${lbl.substring(0,9)}</div>
+  </div>`;
+}
+function shortLbl(line){if(!line)return '?';const p=line.label.split('—');return (p[1]||p[0]).trim().substring(0,9)}
+
+
 
 // ═══ СЕЧЕНИЕ ═══
 const SEC=[
