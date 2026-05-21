@@ -1245,7 +1245,23 @@ function rSet(){
     </div>`;
   });
   h+=`</div><div style="margin-top:6px"><button class="btn" style="width:100%" onclick="addCM()">+ Добавить материал</button></div>`;
-  h+=`<div style="padding:14px 0 0;display:flex;gap:10px"><button class="btn btn-p" style="flex:1" onclick="saveSet()">Сохранить</button><button class="btn btn-d" onclick="resetSet()">Сброс цен</button></div><div style="height:8px"></div>`;
+  h+=`<div style="padding:14px 0 0;display:flex;gap:10px"><button class="btn btn-p" style="flex:1" onclick="saveSet()">Сохранить</button><button class="btn btn-d" onclick="resetSet()">Сброс цен</button></div>`;
+
+  // Экспорт / Импорт
+  h+=`<div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.06em;padding:20px 0 8px">Резервная копия</div>
+  <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--rs);padding:12px 14px;font-size:12px;color:var(--t2);line-height:1.6;margin-bottom:8px">
+    Экспорт сохраняет <b>все объекты и настройки</b> в файл.<br>
+    Импорт восстанавливает их — на этом устройстве или у коллеги.
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-p" style="flex:1" onclick="exportData()">⬇ Экспорт</button>
+    <label class="btn" style="flex:1;text-align:center;cursor:pointer;margin:0">
+      ⬆ Импорт
+      <input type="file" accept=".json" style="display:none" onchange="importData(this)">
+    </label>
+  </div>
+  <div id="import-status" style="margin-top:8px;font-size:12px;text-align:center;display:none"></div>
+  <div style="height:8px"></div>`;
   document.getElementById('set-c').innerHTML=h;
 }
 function updCM(i,k,val){if(!PR_MAP[CUR])return;if(!PR_MAP[CUR].custom_mats)PR_MAP[CUR].custom_mats=[];PR_MAP[CUR].custom_mats[i][k]=val}
@@ -1254,7 +1270,113 @@ function delCM(i){if(PR_MAP[CUR]?.custom_mats)PR_MAP[CUR].custom_mats.splice(i,1
 function saveSet(){save();const b=event.target;b.textContent='Сохранено ✓';b.style.background='var(--gr)';setTimeout(()=>{b.textContent='Сохранить';b.style.background=''},1500)}
 function resetSet(){if(!confirm('Сбросить расценки?'))return;if(PR_MAP[CUR]){const old=PR_MAP[CUR];PR_MAP[CUR]={...DP_WORK,brand:old.brand,phase:old.phase,relay:old.relay,obj_name:old.obj_name}}save();rSet()}
 
-// ══ SW + INIT ══
+// ══ ЭКСПОРТ / ИМПОРТ ══
+function exportData(){
+  const data={
+    version:3,
+    exported:new Date().toISOString(),
+    clients:CLIENTS,
+    pr_map:PR_MAP,
+    cur:CUR,
+  };
+  const json=JSON.stringify(data,null,2);
+  const blob=new Blob([json],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  const date=new Date().toLocaleDateString('ru').replace(/\./g,'-');
+  const name=(client()?.name||'объект').replace(/[^а-яёa-z0-9_\-]/gi,'_');
+  a.href=url;
+  a.download=`электросчёт_${name}_${date}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importData(input){
+  const file=input.files[0];
+  if(!file)return;
+  const status=document.getElementById('import-status');
+  if(status){status.style.display='block';status.style.color='var(--t3)';status.textContent='Читаю файл...'}
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const data=JSON.parse(e.target.result);
+      // Валидация структуры
+      if(!data.clients||!Array.isArray(data.clients))
+        throw new Error('Неверный формат файла — это не резервная копия ЭлектроСчёт');
+      if(data.clients.length===0)
+        throw new Error('Файл пустой — нет объектов');
+      // Проверяем версию
+      if(data.version&&data.version>3)
+        throw new Error('Файл от новой версии приложения — обновите ЭлектроСчёт');
+
+      const importedCount=data.clients.length;
+      const existNames=CLIENTS.map(c=>c.name);
+      const conflicts=data.clients.filter(c=>existNames.includes(c.name));
+
+      if(conflicts.length>0){
+        const names=conflicts.map(c=>c.name).join(', ');
+        const choice=confirm(
+          `Найдены объекты с одинаковыми именами:\n${names}\n\nЗаменить существующие данные?\n\nОК = Заменить\nОтмена = Добавить рядом`
+        );
+        if(choice){
+          // Заменяем конфликтующие
+          data.clients.forEach(ic=>{
+            const idx=CLIENTS.findIndex(c=>c.name===ic.name);
+            if(idx>=0)CLIENTS[idx]=ic;else CLIENTS.push(ic);
+          });
+        } else {
+          // Добавляем с суффиксом
+          data.clients.forEach(ic=>{
+            const exists=CLIENTS.some(c=>c.name===ic.name);
+            if(exists)ic.name=ic.name+' (импорт)';
+            CLIENTS.push(ic);
+          });
+        }
+      } else {
+        // Нет конфликтов — просто добавляем
+        data.clients.forEach(ic=>CLIENTS.push(ic));
+      }
+
+      // Мерджим настройки
+      if(data.pr_map){
+        Object.entries(data.pr_map).forEach(([k,v])=>{
+          if(!PR_MAP[k])PR_MAP[k]=v; // не перетираем существующие
+        });
+      }
+
+      // Переключаемся на первый импортированный
+      if(data.cur&&data.clients.some(c=>c.id===data.cur)){
+        CUR=data.cur;
+      } else if(data.clients.length>0){
+        CUR=data.clients[0].id;
+      }
+
+      save();
+      if(status){
+        status.style.color='var(--gr)';
+        status.textContent=`✓ Импортировано объектов: ${importedCount}`;
+      }
+      // Обновляем главный экран
+      setTimeout(()=>{go('home')},800);
+
+    }catch(err){
+      if(status){
+        status.style.color='var(--rd)';
+        status.textContent='❌ '+err.message;
+      }
+    }
+    // Сбрасываем input чтобы можно было загрузить тот же файл снова
+    input.value='';
+  };
+  reader.onerror=()=>{
+    if(status){status.style.color='var(--rd)';status.textContent='❌ Не удалось прочитать файл'}
+  };
+  reader.readAsText(file);
+}
+
+
 let newW=null;
 function doUpd(){if(newW)newW.postMessage({action:'skipWaiting'});location.reload()}
 if('serviceWorker' in navigator){
