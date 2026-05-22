@@ -623,7 +623,10 @@ function rRooms(){
 function openRF(i){
   eR=i;const cl=client();if(!cl)return;
   const r=i!=null?(cl.комнаты||[])[i]:{};
-  curPts=i!=null?{...(r.pts||{})}:{};curType=r.type||'living';
+  curPts=i!=null?{...(r.pts||{})}:{};
+  curType=r.type||'living';
+  // Загружаем сохранённые расстояния — здесь единственное место инициализации
+  curPtDists=i!=null?{...(r.ptDists||{})}:{};
   const щSel=(cl.щитки||[]).map((щ,j)=>`<option value="${j}" ${j===(r.щитокId||0)?'selected':''}>${щ.name}</option>`).join('');
   document.getElementById('rf-c').innerHTML=`
     <div class="fl"><label>Название</label><input id="рн" value="${r.name||''}"></div>
@@ -661,8 +664,8 @@ const DIST_HINT={
 
 function rPtsList(){
   const cl=client();
-  const savedDists=eR!=null?((cl?.комнаты||[])[eR]?.ptDists||{}):{};
-  curPtDists={...savedDists};
+  // ВАЖНО: curPtDists НЕ сбрасывается здесь.
+  // Инициализируется один раз в openRF, обновляется через chQD перед перерисовкой.
 
   // Собираем точки по группам
   const byGrp={roz:[],rozIP:[],light:[],pwr:{}};
