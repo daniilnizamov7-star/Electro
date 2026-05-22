@@ -445,9 +445,32 @@ function calcRoomLines(r){
 
     // Вычисляем длину в зависимости от режима
     let len;
+    // Тип разводки: 'box' = коробка в потолке (отдельный кабель на каждую точку)
+    const wiringType=r.wiringType||'loop';
     if(isPwr){
       // Мощный: прямой кабель, на группу одна линия
       len=calcLenPwr(r, maxDist, bg.pt?.hStd);
+    } else if(!isPwr&&!isLight&&wiringType==='box'){
+      // Розетки/выключатели, режим "Коробка в потолке"
+      // Каждая точка — отдельный кабель из коробки
+      const qPerLine=Math.min(totalQty, maxPerLine);
+      const ptH=bg.pt?.hStd??200;
+      const roomH=parseFloat(r.h)||2.7;
+      const hM=Math.min(ptH/1000, roomH);
+      const drop=Math.max(0, roomH-hM);
+      const ZAPAS_END=0.3; // запас на подключение в точке
+      // Собираем расстояния для всех точек этой группы
+      let totalInner=0;
+      let ptIdx=0;
+      bg.qtys.forEach(x=>{
+        for(let bi=0;bi<x.qty;bi++){
+          const bKey=`box_${grpKey}_${x.ptId}_${ptIdx}`;
+          const d=parseFloat((r.ptDists||{})[bKey])||0;
+          totalInner+=d+drop+ZAPAS_END;
+          ptIdx++;
+        }
+      });
+      len=Math.ceil(((parseFloat(r.dist)||10)+totalInner+0.6+0.8)*1.15);
     } else if(isLight){
       // Освещение: разделяем светильники и выключатели
       const nLights=bg.qtys.reduce((s,x)=>{
@@ -625,6 +648,7 @@ function openRF(i){
   const r=i!=null?(cl.комнаты||[])[i]:{};
   curPts=i!=null?{...(r.pts||{})}:{};
   curType=r.type||'living';
+  curWiringType=r.wiringType||'loop';
   // Загружаем сохранённые расстояния — здесь единственное место инициализации
   curPtDists=i!=null?{...(r.ptDists||{})}:{};
   const щSel=(cl.щитки||[]).map((щ,j)=>`<option value="${j}" ${j===(r.щитокId||0)?'selected':''}>${щ.name}</option>`).join('');
@@ -641,13 +665,41 @@ function openRF(i){
       <div class="fl"><label>Щиток → распредкоробка, м</label><input type="number" id="рд" value="${r.dist||10}" min="1" step=".5"></div>
     </div>
     <div class="fl"><label>Щиток</label><select id="рщ">${щSel||'<option>— нет щитков —</option>'}</select></div>
+    <div class="fl"><label>Тип разводки</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div id="wt-loop" onclick="selWiring('loop')"
+          style="border:2px solid ${curWiringType==='loop'?'var(--acc)':'var(--bdr)'};border-radius:var(--rs);padding:10px 8px;text-align:center;cursor:pointer;background:${curWiringType==='loop'?'var(--acc-l)':'var(--bg)'}">
+          <div style="font-size:22px">🔀</div>
+          <div style="font-size:11px;font-weight:600;color:${curWiringType==='loop'?'var(--acc)':'var(--t2)'};margin-top:3px">Шлейф</div>
+          <div style="font-size:9px;color:var(--t3);margin-top:2px">Коробка в подрозетнике</div>
+        </div>
+        <div id="wt-box" onclick="selWiring('box')"
+          style="border:2px solid ${curWiringType==='box'?'var(--acc)':'var(--bdr)'};border-radius:var(--rs);padding:10px 8px;text-align:center;cursor:pointer;background:${curWiringType==='box'?'var(--acc-l)':'var(--bg)'}">
+          <div style="font-size:22px">📦</div>
+          <div style="font-size:11px;font-weight:600;color:${curWiringType==='box'?'var(--acc)':'var(--t2)'};margin-top:3px">Коробка</div>
+          <div style="font-size:9px;color:var(--t3);margin-top:2px">Коробка в потолке</div>
+        </div>
+      </div>
+    </div>
     <div class="slabel">Точки подключения</div>
     <div id="pts-c"></div>`;
   rPtsList();push('s-rf',i!=null?'Изменить комнату':'Новая комната');
 }
 function selType(id){curType=id;document.querySelectorAll('.tc').forEach(el=>el.classList.toggle('sel',el.getAttribute('onclick')===`selType('${id}')`))}
-// curPtDists хранит расстояния от распредкоробки до групп точек
+function selWiring(type){
+  curWiringType=type;
+  ['loop','box'].forEach(t=>{
+    const el=document.getElementById('wt-'+t);if(!el)return;
+    const sel=t===type;
+    el.style.borderColor=sel?'var(--acc)':'var(--bdr)';
+    el.style.background=sel?'var(--acc-l)':'var(--bg)';
+    el.querySelector('div:nth-child(2)').style.color=sel?'var(--acc)':'var(--t2)';
+  });
+  rPtsList(); // перерисовываем поля — в режиме коробки другие поля
+}// curPtDists хранит расстояния от распредкоробки до групп точек
 let curPtDists={};
+// curWiringType: 'loop' = шлейф (коробка в подрозетнике), 'box' = коробка в потолке
+let curWiringType='loop';
 
 // Группы точек для форм
 const PT_GRPS=['roz','rozIP','light','pwr'];
@@ -695,11 +747,30 @@ function rPtsList(){
     h+=`<div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;box-shadow:var(--shd)">`;
     pts.forEach(pt=>{
       const q=curPts[pt.id]||0;
-      h+=`<div class="ptrow" style="padding:9px 0">
+      // В режиме "Коробка": показываем поле расстояния на каждую точку отдельно
+      // Ключ: 'box_roz_roz1' — чтобы не конфликтовать с общим dist_roz
+      let boxFields='';
+      if(curWiringType==='box'&&q>0){
+        for(let bi=0;bi<q;bi++){
+          const bKey=`box_${grp}_${pt.id}_${bi}`;
+          const bVal=curPtDists[bKey]>0?curPtDists[bKey]:'';
+          boxFields+=`<div style="display:flex;align-items:center;gap:5px;margin-top:4px">
+            <span style="font-size:10px;color:var(--t3);min-width:60px">Точка ${bi+1}, м:</span>
+            <input type="number" id="dist_${bKey}"
+              style="width:58px;background:var(--bg3);border:1.5px solid var(--bdr);border-radius:6px;padding:3px 6px;font-size:12px;outline:none;text-align:center"
+              placeholder="0" value="${bVal}" min="0" step="0.5"
+              oninput="curPtDists['${bKey}']=parseFloat(this.value)||0">
+            <span style="font-size:10px;color:var(--t3)">м</span>
+          </div>`;
+        }
+        boxFields=`<div style="margin-top:5px">${boxFields}</div>`;
+      }
+      h+=`<div class="ptrow" style="padding:9px 0;flex-wrap:wrap">
         <div class="ptico">${pt.ico}</div>
-        <div class="ptlb">
+        <div class="ptlb" style="flex:1">
           <div>${pt.lbl}</div>
           <div class="ptcb">ВВГнг ${pt.cable} · h=${pt.hStd}мм${pt.needUzo?' · УЗО авто':''}</div>
+          ${boxFields}
         </div>
         <div class="qc">
           <button class="qb" onclick="chQD('${pt.id}','${grp}',-1)" ${q===0?'disabled':''}>−</button>
@@ -796,7 +867,7 @@ function chQ(id,d){
   document.querySelectorAll('.qb').forEach(b=>{
     if((b.getAttribute('onclick')||'').includes(`'${id}',-1`))b.disabled=curPts[id]===0;
   });
-}function saveRoom(){const cl=client();if(!cl)return;if(!cl.комнаты)cl.комнаты=[];const r={name:v('рн')||'Комната',type:curType,l:parseFloat(v('рl'))||4,w:parseFloat(v('рw'))||3,h:parseFloat(v('рh'))||2.7,floor:v('рэ'),щитокId:parseInt(v('рщ'))||0,dist:parseFloat(v('рд'))||10,pts:{...curPts},ptDists:{...curPtDists},lineOverrides:eR!=null?((cl.комнаты[eR]||{}).lineOverrides||{}):{}};if(eR!=null)cl.комнаты[eR]=r;else cl.комнаты.push(r);save();pop();rRooms()}
+}function saveRoom(){const cl=client();if(!cl)return;if(!cl.комнаты)cl.комнаты=[];const r={name:v('рн')||'Комната',type:curType,l:parseFloat(v('рl'))||4,w:parseFloat(v('рw'))||3,h:parseFloat(v('рh'))||2.7,floor:v('рэ'),щитокId:parseInt(v('рщ'))||0,dist:parseFloat(v('рд'))||10,pts:{...curPts},ptDists:{...curPtDists},wiringType:curWiringType,lineOverrides:eR!=null?((cl.комнаты[eR]||{}).lineOverrides||{}):{}};if(eR!=null)cl.комнаты[eR]=r;else cl.комнаты.push(r);save();pop();rRooms()}
 function delR(i){if(!confirm('Удалить?'))return;const cl=client();if(!cl)return;cl.комнаты.splice(i,1);save();rRooms()}
 function openRD(i){
   const cl=client();if(!cl)return;const r=(cl.комнаты||[])[i];if(!r)return;eR=i;
