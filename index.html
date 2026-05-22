@@ -678,7 +678,7 @@ function rPtsList(){
     const pts=byGrp[grp];
     if(!pts||!pts.length)return;
     const totalInGrp=pts.reduce((s,pt)=>s+(curPts[pt.id]||0),0);
-    const distVal=curPtDists[grp]||'';
+    const distVal=curPtDists[grp]>0?curPtDists[grp]:'';
     h+=`<div class="slabel" style="margin-top:12px">${GRPLBL_FULL[grp]}</div>`;
     // Поле расстояния — всегда видимое над группой
     h+=`<div style="background:var(--acc-l);border:1.5px solid var(--acc);border-radius:var(--rs);padding:8px 12px;margin-bottom:6px;display:flex;align-items:center;gap:8px">
@@ -711,7 +711,7 @@ function rPtsList(){
   // ── ОСВЕЩЕНИЕ (одна группа — одно расстояние) ──
   const lightPts=byGrp.light||[];
   if(lightPts.length){
-    const distVal=curPtDists['light']||'';
+    const distVal=curPtDists['light']>0?curPtDists['light']:'';
     h+=`<div class="slabel" style="margin-top:12px">${GRPLBL_FULL.light}</div>`;
     h+=`<div style="background:var(--acc-l);border:1.5px solid var(--acc);border-radius:var(--rs);padding:8px 12px;margin-bottom:6px;display:flex;align-items:center;gap:8px">
       <span style="flex:1;font-size:11px;color:var(--acc);font-weight:500">${DIST_HINT.light}</span>
@@ -748,7 +748,7 @@ function rPtsList(){
     pwrPts.forEach(pt=>{
       const q=curPts[pt.id]||0;
       const grpKey=pt.id; // для pwr grpKey = ptId
-      const distVal=curPtDists[grpKey]||'';
+      const distVal=curPtDists[grpKey]>0?curPtDists[grpKey]:'';
       h+=`<div class="ptrow" style="padding:9px 0;flex-wrap:wrap">
         <div class="ptico">${pt.ico}</div>
         <div class="ptlb" style="flex:1">
@@ -778,13 +778,14 @@ function rPtsList(){
 
 function chQD(id,grpKey,d){
   // Сохраняем ВСЕ поля расстояний из DOM перед перерисовкой
+  // Используем parseFloat — если пустое поле, сохраняем 0 (не удаляем ключ)
   document.querySelectorAll('input[id^="dist_"]').forEach(inp=>{
     const k=inp.id.replace('dist_','');
-    curPtDists[k]=parseFloat(inp.value)||0;
+    const val=parseFloat(inp.value);
+    curPtDists[k]=isNaN(val)?0:val;
   });
   chQ(id,d);
   rPtsList();
-  // Восстанавливаем фокус если нужно
 }
 function chQ(id,d){
   curPts[id]=Math.max(0,(curPts[id]||0)+d);
