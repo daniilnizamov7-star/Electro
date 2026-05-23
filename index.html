@@ -178,6 +178,7 @@ html,body{height:100%;background:var(--bg);color:var(--t);font-family:var(--sans
     <div class="scr" id="s-check"><div id="check-c"></div></div>
     <div class="scr" id="s-set"><div id="set-c" style="padding:12px"></div></div>
     <div class="scr" id="s-set-brand"><div id="set-brand-c" style="padding:12px"></div></div>
+    <div class="scr" id="s-obj-settings"><div id="obj-settings-c" style="padding:12px"></div></div>
   </div>
   <nav class="nav">
     <button class="ni on" id="ni-home" onclick="go('home')">
@@ -287,34 +288,78 @@ function щP(slots){const b=B();return slots<=12?b.щ12:slots<=24?b.щ24:slots<=
 
 // ══ STATE — МУЛЬТИКЛИЕНТ ══
 let CLIENTS=[], PR_MAP={}, CUR=null;
-const DP_WORK={brand:'IEK',phase:1,relay:false,obj_name:'',
+
+// Глобальные настройки — общие для всех объектов (цены, марки, кастомные точки)
+const DP_GLOBAL={brand:'IEK',
   w_roz1:250,w_roz2:300,w_rozIP:400,w_rozUSB:250,w_rozTV:200,
   w_roz1n:150,w_vkl1n:120,w_rozIPn:200,
   w_vkl1:200,w_vkl2:250,w_vklpr:350,w_spot:200,w_lstr:250,w_led:350,w_trak:300,
   w_pwr_var:1000,w_pwr_duh:700,w_pwr_boj:600,w_pwr_stir:600,w_pwr_pmm:600,
   w_pwr_kond:700,w_pwr_tp:800,w_pwr_holod:200,w_pwr_ps:600,w_pwr_vent:250,w_pwr_vyth:200,
-  w_stroba:120,w_cable:50,w_gofra:40,w_lotok:30,w_podroz:100,w_щиток:2000,rashodni_pct:7,w_surface_pct:60,custom_mats:[]};
+  w_stroba:120,w_cable:50,w_gofra:40,w_lotok:30,w_podroz:100,w_щиток:2000,
+  rashodni_pct:7,w_surface_pct:60,labels:{},custom_pts:[]};
 
+// Настройки объекта — специфика конкретного заказчика
+const DP_CLIENT={phase:1,relay:false,obj_name:'',custom_works:[],custom_mats:[]};
 
-function save(){try{localStorage.setItem('ec9_c',JSON.stringify(CLIENTS));localStorage.setItem('ec9_p',JSON.stringify(PR_MAP));localStorage.setItem('ec9_cur',CUR||'')}catch(e){}}
+// Устаревший дефолт — для миграции старых данных
+const DP_WORK={...DP_GLOBAL,...DP_CLIENT};
+
+let GLOBAL={...DP_GLOBAL}; // глобальные настройки
+
+function save(){
+  try{
+    localStorage.setItem('ec9_c',JSON.stringify(CLIENTS));
+    localStorage.setItem('ec9_p',JSON.stringify(PR_MAP));
+    localStorage.setItem('ec9_g',JSON.stringify(GLOBAL));
+    localStorage.setItem('ec9_cur',CUR||'');
+  }catch(e){}
+}
 function load(){
   try{
     const c=localStorage.getItem('ec9_c');if(c)CLIENTS=JSON.parse(c);
     const p=localStorage.getItem('ec9_p');if(p)PR_MAP=JSON.parse(p);
+    const g=localStorage.getItem('ec9_g');if(g)GLOBAL={...DP_GLOBAL,...JSON.parse(g)};
     CUR=localStorage.getItem('ec9_cur')||null;
+    // Миграция: если в PR_MAP есть глобальные поля — перенести в GLOBAL (однократно)
+    if(!g){
+      const anyPR=Object.values(PR_MAP)[0];
+      if(anyPR){
+        Object.keys(DP_GLOBAL).forEach(k=>{if(anyPR[k]!=null)GLOBAL[k]=anyPR[k];});
+      }
+    }
     // Миграция из старых версий ev4
     if(!CLIENTS.length){
       const old=localStorage.getItem('ev4');
-      if(old){const od=JSON.parse(old);const id='m_'+Date.now();CLIENTS=[{id,name:'Объект 1',created:Date.now(),щитки:od.щитки||[],комнаты:od.комнаты||[],checklist:od.checklist||null,lines_done:od.lines_done||{}}];const op=localStorage.getItem('ev4p');PR_MAP[id]=op?{...DP_WORK,...JSON.parse(op)}:{...DP_WORK};CUR=id;save();}
+      if(old){const od=JSON.parse(old);const id='m_'+Date.now();CLIENTS=[{id,name:'Объект 1',created:Date.now(),щитки:od.щитки||[],комнаты:od.комнаты||[],checklist:null,lines_done:{}}];const op=localStorage.getItem('ev4p');if(op){const opd=JSON.parse(op);Object.keys(DP_GLOBAL).forEach(k=>{if(opd[k]!=null)GLOBAL[k]=opd[k];});PR_MAP[id]={...DP_CLIENT,obj_name:'Объект 1'};}else PR_MAP[id]={...DP_CLIENT,obj_name:'Объект 1'};CUR=id;save();}
     }
     if(!CUR&&CLIENTS.length)CUR=CLIENTS[0].id;
   }catch(e){}
 }
 load();
 function client(){return CLIENTS.find(c=>c.id===CUR)||null}
-function PR(){return PR_MAP[CUR]||DP_WORK}
-function setPR(key,val){if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_WORK};PR_MAP[CUR][key]=val;save()}
-function newClient(name){const id='c_'+Date.now();CLIENTS.push({id,name,created:Date.now(),щитки:[],комнаты:[],checklist:null,lines_done:{}});PR_MAP[id]={...DP_WORK,obj_name:name};CUR=id;save();return id}
+// PR() возвращает merged: глобальные настройки + данные объекта
+function PR(){
+  const cl=PR_MAP[CUR]||{};
+  return {...GLOBAL,...cl};
+}
+// setG — записать в глобальные настройки
+function setG(key,val){GLOBAL[key]=val;save()}
+// setPR — записать в настройки объекта (phase, relay, obj_name, custom_works, custom_mats)
+function setPR(key,val){
+  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_CLIENT};
+  // Глобальные ключи — пишем в GLOBAL
+  if(key in DP_GLOBAL){GLOBAL[key]=val;}
+  else{PR_MAP[CUR][key]=val;}
+  save();
+}
+function setLabel(key,val){if(!GLOBAL.labels)GLOBAL.labels={};GLOBAL.labels[key]=val;save()}
+function newClient(name){
+  const id='c_'+Date.now();
+  CLIENTS.push({id,name,created:Date.now(),щитки:[],комнаты:[],checklist:null,lines_done:{}});
+  PR_MAP[id]={...DP_CLIENT,obj_name:name};
+  CUR=id;save();return id;
+}
 function delClient(id){if(CLIENTS.length<=1){alert('Нельзя удалить единственный объект');return}if(!confirm('Удалить объект?'))return;CLIENTS=CLIENTS.filter(c=>c.id!==id);delete PR_MAP[id];if(CUR===id)CUR=CLIENTS[0].id;save()}
 
 // ══ НАВИГАЦИЯ ══
@@ -379,7 +424,7 @@ function autoProtForGrp(grpKey, roomType){
 //
 // Константы: +0.6м изгибы + 0.8м разделка × 1.15 запас
 
-const BEND=0.6, RAZD=0.8, ZAP=1.15;
+const RAZD=0.8, ZAP=1.15; // RAZD=запас на разделку/подключение, ZAP=15% на изгибы и монтаж
 
 // Мощный потребитель — прямой кабель от щитка до прибора (без распредкоробки)
 // innerDist = расстояние от щитка до прибора напрямую
@@ -388,10 +433,10 @@ function calcLenPwr(r, innerDist, ptH){
   const roomH=parseFloat(r.h)||2.7;
   const hM=Math.min((ptH!=null?parseFloat(ptH):200)/1000, roomH);
   const drop=Math.max(0, roomH-hM);
-  const horiz=parseFloat(innerDist)||0; // только до прибора, щD не добавляем
+  const horiz=parseFloat(innerDist)||0;
   const vert=drop;
-  const total=Math.ceil((horiz+vert+BEND+RAZD)*ZAP);
-  return {total, horiz:Math.ceil(horiz*ZAP), vert:Math.ceil((vert+BEND+RAZD)*ZAP)};
+  const total=Math.ceil((horiz+vert+RAZD)*ZAP);
+  return {total, horiz:Math.ceil(horiz*ZAP), vert:Math.ceil((vert+RAZD)*ZAP)};
 }
 
 // Розетки и выключатели
@@ -405,8 +450,8 @@ function calcLenRoz(r, maxDist, ptH, n){
   const mD=parseFloat(maxDist)||0;
   const horiz=щD+mD;
   const vertical=(nPts-1)*2*drop+drop;
-  const total=Math.ceil((horiz+vertical+BEND+RAZD)*ZAP);
-  return {total, horiz:Math.ceil(horiz*ZAP), vert:Math.ceil((vertical+BEND+RAZD)*ZAP)};
+  const total=Math.ceil((horiz+vertical+RAZD)*ZAP);
+  return {total, horiz:Math.ceil(horiz*ZAP), vert:Math.ceil((vertical+RAZD)*ZAP)};
 }
 
 // Освещение
@@ -422,11 +467,10 @@ function calcLenLight(r, maxDist, switchH, nLights, nSwitches){
     const sDrop=Math.max(0, roomH-sH);
     switchV=(nSwitches-1)*2*sDrop+sDrop;
   }
-  // Горизонталь = магистраль по потолку; vert = отводы светильников + спуски выключателей
   const horiz=щD+mD;
   const vert=lightSpurs+switchV;
-  const total=Math.ceil((horiz+vert+BEND+RAZD)*ZAP);
-  return {total, horiz:Math.ceil((horiz+lightSpurs)*ZAP), vert:Math.ceil((switchV+BEND+RAZD)*ZAP)};
+  const total=Math.ceil((horiz+vert+RAZD)*ZAP);
+  return {total, horiz:Math.ceil((horiz+lightSpurs)*ZAP), vert:Math.ceil((switchV+RAZD)*ZAP)};
 }
 
 // Строит список линий для комнаты
@@ -475,7 +519,7 @@ function calcRoomLines(r){
           }
         });
         const щD=parseFloat(rWithDist.dist)||10;
-        const len=Math.ceil((щD+totalInner+0.6+0.8)*1.15);
+        const len=Math.ceil((щD+totalInner+RAZD)*ZAP);
         const _bH=Math.ceil(щD*1.15);
         lenObj={total:len,horiz:_bH,vert:Math.max(0,len-_bH)};
       } else if(isLight){
@@ -560,7 +604,7 @@ function calcRoomLines(r){
           totalInner+=d+drop+ZAPAS_END;
         }
       });
-      len=Math.ceil(((parseFloat(r.dist)||10)+totalInner+0.6+0.8)*1.15);
+      len=Math.ceil(((parseFloat(r.dist)||10)+totalInner+RAZD)*ZAP);
       // box mode: горизонталь = щD, вертикаль = всё остальное (спуски)
       var _boxHoriz=Math.ceil((parseFloat(r.dist)||10)*ZAP);
       var _lenObj={total:len, horiz:_boxHoriz, vert:Math.max(0,len-_boxHoriz)};
@@ -754,7 +798,10 @@ function rHome(){
   showScr('s-home');setBar('home');
   const cl=client();
   if(!cl){document.getElementById('home-c').innerHTML=`<div class="empty"><div class="empty-i">⚡</div><div class="empty-t">Нет объектов.<br>Нажмите «Клиенты».</div></div>`;return}
-  let h=`<div style="padding:10px 12px 4px;font-size:12px;color:var(--t2)">Объект: <b style="color:var(--t)">${cl.name}</b></div>`;
+  let h=`<div style="padding:10px 12px 4px;display:flex;align-items:center;gap:8px">
+    <span style="font-size:12px;color:var(--t2);flex:1">Объект: <b style="color:var(--t)">${cl.name}</b></span>
+    <button class="btn btn-sm" onclick="openObjSettings()" style="font-size:11px">⚙️ Параметры</button>
+  </div>`;
   if(!(cl.щитки||[]).length){
     h+=`<div class="empty"><div class="empty-i">⚡</div><div class="empty-t">Щитки не добавлены.<br>Добавьте щиток, затем комнаты.</div></div>`;
   }else{
@@ -764,6 +811,88 @@ function rHome(){
   }
   h+=`<div class="add-area"><button class="add-btn" onclick="openЩ(null)">+ Добавить щиток</button></div><div style="height:10px"></div>`;
   document.getElementById('home-c').innerHTML=h;
+}
+function openObjSettings(){
+  const cl=client();if(!cl)return;
+  const pr=PR();const b=B();
+  let h='';
+
+  h+=secHdr('Параметры объекта');
+  h+=`<div class="mblk">
+    <div class="sf-row"><span class="sf-lbl">Название</span>
+      <input style="flex:1;min-width:0;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:5px 8px;font-size:12px;outline:none"
+        value="${escHtml(pr.obj_name||cl.name||'')}" oninput="setPR('obj_name',this.value)"></div>
+    <div class="sf-row"><span class="sf-lbl">Фазность</span>
+      <select style="background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:5px 8px;font-size:12px;outline:none"
+        onchange="setPR('phase',parseInt(this.value))">
+        <option value="1" ${(pr.phase||1)===1?'selected':''}>Однофазная 220В</option>
+        <option value="3" ${pr.phase===3?'selected':''}>Трёхфазная 380В</option>
+      </select></div>
+    <div class="sf-row"><span class="sf-lbl">Реле напряжения</span>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="obj-relay" ${pr.relay?'checked':''} onchange="setPR('relay',this.checked)" style="width:16px;height:16px">
+        <span style="font-size:11px;color:var(--t3)">${pr.relay?`${b.lbl} ~${fmt(b[pr.phase===3?'relay_3f':'relay_1f'])}₽/шт`:'добавить в смету'}</span>
+      </label></div>
+  </div>`;
+
+  h+=secHdr('Дополнительные виды работ');
+  h+=`<div style="font-size:11px;color:var(--t3);margin-bottom:6px">Специфика этого объекта — попадут в смету и акт.</div>`;
+  h+=`<div class="mblk">`;
+  (PR_MAP[CUR]?.custom_works||[]).forEach((w,i)=>{
+    h+=`<div class="sf-row" style="flex-wrap:wrap;gap:4px;padding:8px 12px">
+      <input style="flex:2;min-width:90px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;outline:none"
+        value="${escHtml(w.lbl)}" placeholder="Вид работы" oninput="updCW(${i},'lbl',this.value)">
+      <input type="number" style="width:70px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;text-align:right;outline:none"
+        value="${w.price}" placeholder="Цена" oninput="updCW(${i},'price',parseFloat(this.value)||0)">
+      <input type="number" style="width:50px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;text-align:right;outline:none"
+        value="${w.qty}" placeholder="Кол." oninput="updCW(${i},'qty',parseFloat(this.value)||0)">
+      <select style="width:46px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 5px;font-size:11px;outline:none"
+        onchange="updCW(${i},'unit',this.value)">
+        <option value="шт" ${w.unit==='шт'?'selected':''}>шт</option>
+        <option value="м" ${w.unit==='м'?'selected':''}>м</option>
+        <option value="кв.м" ${w.unit==='кв.м'?'selected':''}>м²</option>
+      </select>
+      <button onclick="delCW(${i})" style="background:var(--rd-l);border:none;border-radius:6px;padding:4px 8px;color:var(--rd);cursor:pointer;font-size:11px">✕</button>
+    </div>`;
+  });
+  h+=`</div><div style="margin-top:4px"><button class="btn" style="width:100%" onclick="addCW()">+ Добавить вид работы</button></div>`;
+
+  h+=secHdr('Дополнительные материалы');
+  h+=`<div style="font-size:11px;color:var(--t3);margin-bottom:6px">Специфика объекта — попадут в смету и список закупки.</div>`;
+  h+=`<div class="mblk">`;
+  (PR_MAP[CUR]?.custom_mats||[]).forEach((m,i)=>{
+    h+=`<div class="sf-row" style="flex-wrap:wrap;gap:4px;padding:8px 12px">
+      <input style="flex:2;min-width:90px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;outline:none"
+        value="${escHtml(m.lbl)}" placeholder="Материал" oninput="updCM(${i},'lbl',this.value)">
+      <input type="number" style="width:65px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;text-align:right;outline:none"
+        value="${m.price}" placeholder="Цена" oninput="updCM(${i},'price',parseFloat(this.value)||0)">
+      <input type="number" style="width:45px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;text-align:right;outline:none"
+        value="${m.qty}" placeholder="Кол." oninput="updCM(${i},'qty',parseFloat(this.value)||0)">
+      <select style="width:46px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 5px;font-size:11px;outline:none"
+        onchange="updCM(${i},'qty_mode',this.value)">
+        <option value="шт" ${m.qty_mode==='шт'?'selected':''}>шт</option>
+        <option value="м" ${m.qty_mode==='м'?'selected':''}>м</option>
+      </select>
+      <button onclick="delCM(${i})" style="background:var(--rd-l);border:none;border-radius:6px;padding:4px 8px;color:var(--rd);cursor:pointer;font-size:11px">✕</button>
+    </div>`;
+  });
+  h+=`</div><div style="margin-top:4px"><button class="btn" style="width:100%" onclick="addCM()">+ Добавить материал</button></div>`;
+
+  document.getElementById('obj-settings-c').innerHTML=h;
+  push('s-obj-settings','Параметры объекта');
+}
+
+function addCW(){
+  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_CLIENT};
+  if(!PR_MAP[CUR].custom_works)PR_MAP[CUR].custom_works=[];
+  PR_MAP[CUR].custom_works.push({lbl:'',price:0,qty:1,unit:'шт'});
+  save();openObjSettings();
+}
+function addCM(){
+  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_CLIENT};
+  if(!PR_MAP[CUR].custom_mats)PR_MAP[CUR].custom_mats=[];
+  PR_MAP[CUR].custom_mats.push({lbl:'',price:0,qty:1,qty_mode:'шт'});
+  save();openObjSettings();
 }
 function openЩ(i){eЩ=i;const cl=client();const щ=i!=null?(cl?.щитки||[])[i]:{};document.getElementById('щф-c').innerHTML=`<div class="fl"><label>Название</label><input id="щн" value="${щ.name||'Щиток '+((cl?.щитки||[]).length+1)}"></div><div class="fl"><label>Расположение</label><input id="щл" value="${щ.loc||''}"></div><div class="r2"><div class="fl"><label>Этаж</label><select id="щэ"><option value="1" ${(щ.floor||'1')==='1'?'selected':''}>1 этаж</option><option value="2" ${щ.floor==='2'?'selected':''}>2 этаж</option></select></div><div class="fl"><label>До ввода, м</label><input type="number" id="щд" value="${щ.dist||5}" min="1"></div></div>`;push('s-щф',i!=null?'Изменить щиток':'Новый щиток')}
 function saveЩ(){const cl=client();if(!cl)return;if(!cl.щитки)cl.щитки=[];const o={name:v('щн')||'Щиток',loc:v('щл'),floor:v('щэ'),dist:parseFloat(v('щд'))||5};if(eЩ!=null)cl.щитки[eЩ]=o;else cl.щитки.push(o);save();pop()}
@@ -1869,33 +1998,11 @@ function rCheck(){
 function tCL(id){const cl=client();if(!cl)return;cl.checklist[id]=!cl.checklist[id];save();rCheck()}
 function resetCL(){if(!confirm('Сбросить?'))return;const cl=client();if(!cl)return;cl.checklist={};CL.forEach(ph=>ph.items.forEach(it=>{cl.checklist[it.id]=false}));save();rCheck()}
 
-// ══ НАСТРОЙКИ — новая версия ══
-
-// Экран настроек — компактный
+// ══ НАСТРОЙКИ — вкладка Цены (только глобальное) ══
 function rSet(){
   const pr=PR();const b=B();
   const bk=pr.brand||'IEK';
-
   let h='';
-
-  // Объект
-  h+=secHdr('Объект и параметры');
-  h+=`<div class="mblk">
-    <div class="sf-row"><span class="sf-lbl">Название объекта</span>
-      <input style="flex:1;min-width:0;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:5px 8px;font-size:12px;outline:none"
-        value="${pr.obj_name||''}" oninput="setPR('obj_name',this.value)"></div>
-    <div class="sf-row"><span class="sf-lbl">Фазность</span>
-      <select style="background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:5px 8px;font-size:12px;outline:none"
-        onchange="setPR('phase',parseInt(this.value))">
-        <option value="1" ${(pr.phase||1)===1?'selected':''}>Однофазная 220В</option>
-        <option value="3" ${pr.phase===3?'selected':''}>Трёхфазная 380В</option>
-      </select></div>
-    <div class="sf-row"><span class="sf-lbl">Реле напряжения</span>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-        <input type="checkbox" ${pr.relay?'checked':''} onchange="setPR('relay',this.checked)" style="width:16px;height:16px">
-        <span style="font-size:11px;color:var(--t3)">${pr.relay?`${b.lbl} ~${fmt(b[pr.phase===3?'relay_3f':'relay_1f'])}₽/шт`:'добавить в смету'}</span>
-      </label></div>
-  </div>`;
 
   // Марки — компактно, кнопка редактирования
   h+=secHdr('Марка оборудования');
@@ -1925,23 +2032,21 @@ function rSet(){
   // Расценки на работу
   const WF=[
     {sec:'Монтаж точек (₽/шт)'},
-    {k:'w_roz1',l:'Розетка одиночная'},{k:'w_roz2',l:'Розетка двойная'},
-    {k:'w_rozIP',l:'Розетка IP44'},{k:'w_rozUSB',l:'Розетка USB/TypeC'},{k:'w_rozTV',l:'ТВ/LAN розетка'},
-    {k:'w_roz1n',l:'Розетка накладная'},{k:'w_vkl1n',l:'Выключатель накладной'},{k:'w_rozIPn',l:'Розетка IP44 накладная'},
-    {k:'w_vkl1',l:'Выключатель 1-кл.'},
-    {k:'w_vkl2',l:'Выключатель 2-кл.'},{k:'w_vklpr',l:'Проходной выкл.'},
-    {k:'w_spot',l:'Светильник встроен.'},{k:'w_lstr',l:'Люстра'},
-    {k:'w_led',l:'LED-лента'},{k:'w_trak',l:'Трековые споты'},
-    {k:'w_pwr_var',l:'Варочная панель'},{k:'w_pwr_duh',l:'Духовой шкаф'},
-    {k:'w_pwr_boj',l:'Водонагреватель'},{k:'w_pwr_stir',l:'Стиральная машина'},
-    {k:'w_pwr_pmm',l:'Посудомойка'},{k:'w_pwr_kond',l:'Кондиционер'},
-    {k:'w_pwr_tp',l:'Тёплый пол'},{k:'w_pwr_ps',l:'Полотенцесушитель эл.'},
-    ...(pr.custom_pts||[]).map((cp,i)=>({k:`__cpt_${i}`,l:`${cp.ico||'🔌'} ${cp.lbl}`,_cpt:true,_idx:i})),
+    {k:'w_roz1',l:'Розетка одиночная',ptId:'roz1'},{k:'w_roz2',l:'Розетка двойная',ptId:'roz2'},
+    {k:'w_rozIP',l:'Розетка IP44',ptId:'rozIP'},{k:'w_rozUSB',l:'Розетка USB/TypeC',ptId:'rozUSB'},{k:'w_rozTV',l:'ТВ/LAN розетка',ptId:'rozTV'},
+    {k:'w_roz1n',l:'Розетка накладная',ptId:'roz1n'},{k:'w_vkl1n',l:'Выключатель накладной',ptId:'vkl1n'},{k:'w_rozIPn',l:'Розетка IP44 накладная',ptId:'rozIPn'},
+    {k:'w_vkl1',l:'Выключатель 1-кл.',ptId:'vkl1'},
+    {k:'w_vkl2',l:'Выключатель 2-кл.',ptId:'vkl2'},{k:'w_vklpr',l:'Проходной выкл.',ptId:'vklpr'},
+    {k:'w_spot',l:'Светильник встроен.',ptId:'spot'},{k:'w_lstr',l:'Люстра',ptId:'lstr'},
+    {k:'w_led',l:'LED-лента (до БП)',ptId:'led'},{k:'w_trak',l:'Трековые споты',ptId:'trak'},
+    {k:'w_pwr_var',l:'Варочная панель',ptId:'pwr_var'},{k:'w_pwr_duh',l:'Духовой шкаф',ptId:'pwr_duh'},
+    {k:'w_pwr_boj',l:'Водонагреватель',ptId:'pwr_boj'},{k:'w_pwr_stir',l:'Стиральная машина',ptId:'pwr_stir'},
+    {k:'w_pwr_pmm',l:'Посудомойка',ptId:'pwr_pmm'},{k:'w_pwr_kond',l:'Кондиционер',ptId:'pwr_kond'},
+    {k:'w_pwr_tp',l:'Тёплый пол',ptId:'pwr_tp'},{k:'w_pwr_ps',l:'Полотенцесушитель эл.',ptId:'pwr_ps'},
     {sec:'Общие расценки (₽/м или ₽/шт)'},
     {k:'w_stroba',l:'Штробление, м'},{k:'w_cable',l:'Прокладка кабеля, м'},
     {k:'w_gofra',l:'Прокладка в гофре, м'},{k:'w_lotok',l:'Прокладка в лотке, м'},
     {k:'w_podroz',l:'Монтаж подрозетника, шт'},{k:'w_щиток',l:'Сборка щитка, шт'},
-    {k:'w_surface_pct',l:'Накладной монтаж — % от встроенного',unit:'%',hint:'Розетки/выключатели без штробы и подрозетника. Обычно 50–70% от обычной цены'},
     {sec:'Расходники'},
     {k:'rashodni_pct',l:'% от стоимости материалов',unit:'%',hint:'Буры, дюбели, хомуты, изолента, алебастр. Рекомендуется 5–10%'},
   ];
@@ -1953,24 +2058,16 @@ function rSet(){
       inB=true;return;
     }
     const unit=f.unit||'₽';
-    if(f._cpt){
-      const cp=(pr.custom_pts||[])[f._idx];
-      if(!cp)return;
-      const val=cp.price||0;
-      h+=`<div class="sf-row" style="flex-wrap:wrap">
-        <div style="display:flex;align-items:center;gap:10px;width:100%">
-          <span class="sf-lbl">${f.l}</span>
-          <input type="number" class="sf-inp" value="${val}" min="0" step="any"
-            oninput="updCptPrice(${f._idx},parseFloat(this.value)||0)">
-          <span style="font-size:11px;color:var(--t3)">₽</span>
-        </div>
-      </div>`;
-      return;
-    }
     const val=pr[f.k]!=null?pr[f.k]:0;
+    // Читаем пользовательское название если есть
+    const customLbl=(pr.labels||{})[f.k]||f.l;
     h+=`<div class="sf-row" style="flex-wrap:wrap">
-      <div style="display:flex;align-items:center;gap:10px;width:100%">
-        <span class="sf-lbl">${f.l}</span>
+      <div style="display:flex;align-items:center;gap:6px;width:100%">
+        <input style="flex:1;min-width:60px;background:transparent;border:none;border-bottom:1px solid transparent;font-size:12px;color:var(--t1);outline:none;padding:2px 0"
+          value="${escHtml(customLbl)}"
+          oninput="setLabel('${f.k}',this.value)"
+          onfocus="this.style.borderBottomColor='var(--acc)'"
+          onblur="this.style.borderBottomColor='transparent'">
         <input type="number" class="sf-inp" value="${val}" min="0"
           ${f.k==='rashodni_pct'?'max="30" step="1"':'step="any"'}
           oninput="setPR('${f.k}',parseFloat(this.value)||0)">
@@ -1979,95 +2076,34 @@ function rSet(){
       ${f.hint?`<div style="width:100%;font-size:10px;color:var(--t3);padding:0 0 4px;line-height:1.5">${f.hint}</div>`:''}
     </div>`;
   });
-  if(inB)h+='</div>';
-
-  // Пользовательские работы — попадают в смету/акт в блок "Работа"
-  h+=secHdr('Дополнительные виды работ');
-  h+=`<div style="font-size:11px;color:var(--t3);margin-bottom:6px;line-height:1.5">
-    Добавь свои виды работ — они появятся в смете и акте в разделе «Работа».
-  </div>`;
-  h+=`<div class="mblk" id="cw-list">`;
-  (pr.custom_works||[]).forEach((w,i)=>{
-    h+=`<div class="sf-row" style="flex-wrap:wrap;gap:4px;padding:8px 12px">
-      <input style="flex:2;min-width:90px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;outline:none"
-        value="${escHtml(w.lbl)}" placeholder="Вид работы"
-        oninput="updCW(${i},'lbl',this.value)">
-      <input type="number"
-        style="width:70px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;text-align:right;outline:none"
-        value="${w.price}" placeholder="Цена" oninput="updCW(${i},'price',parseFloat(this.value)||0)">
-      <input type="number"
-        style="width:50px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;text-align:right;outline:none"
-        value="${w.qty}" placeholder="Кол." oninput="updCW(${i},'qty',parseFloat(this.value)||0)">
-      <select style="width:46px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 5px;font-size:11px;outline:none"
-        onchange="updCW(${i},'unit',this.value)">
-        <option value="шт" ${w.unit==='шт'?'selected':''}>шт</option>
-        <option value="м" ${w.unit==='м'?'selected':''}>м</option>
-        <option value="кв.м" ${w.unit==='кв.м'?'selected':''}>м²</option>
-      </select>
-      <button onclick="delCW(${i})"
-        style="background:var(--rd-l);border:none;border-radius:6px;padding:4px 8px;color:var(--rd);cursor:pointer;font-size:11px">✕</button>
-    </div>`;
-  });
-  h+=`</div>
-  <div style="margin-top:6px"><button class="btn" style="width:100%" onclick="addCW()">+ Добавить вид работы</button></div>`;
-
-  // Пользовательские материалы
-  h+=secHdr('Дополнительные материалы');
-  h+=`<div style="font-size:11px;color:var(--t3);margin-bottom:6px;line-height:1.5">
-    Попадают в смету в раздел «Материалы» и в список закупки.
-  </div>`;
-  h+=`<div class="mblk" id="cm-list">`;
-  (pr.custom_mats||[]).forEach((m,i)=>{
-    h+=`<div class="sf-row" style="flex-wrap:wrap;gap:4px;padding:8px 12px">
-      <input style="flex:2;min-width:90px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;outline:none"
-        value="${escHtml(m.lbl)}" placeholder="Название"
-        oninput="updCM(${i},'lbl',this.value)">
-      <input type="number"
-        style="width:65px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;text-align:right;outline:none"
-        value="${m.price}" placeholder="Цена" oninput="updCM(${i},'price',parseFloat(this.value)||0)">
-      <input type="number"
-        style="width:45px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;text-align:right;outline:none"
-        value="${m.qty}" placeholder="Кол." oninput="updCM(${i},'qty',parseFloat(this.value)||0)">
-      <select style="width:46px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 5px;font-size:11px;outline:none"
-        onchange="updCM(${i},'qty_mode',this.value)">
-        <option value="шт" ${m.qty_mode==='шт'?'selected':''}>шт</option>
-        <option value="м" ${m.qty_mode==='м'?'selected':''}>м</option>
-      </select>
-      <button onclick="delCM(${i})"
-        style="background:var(--rd-l);border:none;border-radius:6px;padding:4px 8px;color:var(--rd);cursor:pointer;font-size:11px">✕</button>
-    </div>`;
-  });
-  h+=`</div>
-  <div style="margin-top:6px"><button class="btn" style="width:100%" onclick="addCM()">+ Добавить материал</button></div>`;
-
-  // Пользовательские точки
-  h+=secHdr('Свои виды точек');
-  h+=`<div style="font-size:11px;color:var(--t3);margin-bottom:6px;line-height:1.5">
-    Добавь свою точку (теплосчётчик, видеодомофон и т.д.) — она появится в форме комнаты
-    наравне с остальными, с расчётом кабеля и автоматом.
-  </div>`;
-  const cpts=(pr.custom_pts||[]);
-  if(cpts.length){
-    h+=`<div class="mblk" style="margin-bottom:6px">`;
-    cpts.forEach((cp,i)=>{
-      h+=`<div class="mr"><span style="font-size:16px;margin-right:4px">${cp.ico||'🔌'}</span>
-        <span class="mn">${escHtml(cp.lbl)}</span>
-        <span class="mq">${cp.cable}</span>
-        <span class="mq">${cp.price||0}₽</span>
-        <button onclick="editCustomPt(${i})"
-          style="background:var(--bg3);border:none;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;color:var(--t2)">✎</button>
-        <button onclick="delCustomPt(${i})"
-          style="background:var(--rd-l);border:none;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;color:var(--rd)">✕</button>
+  // Кастомные точки — прямо в списке Монтаж точек
+  if((pr.custom_pts||[]).length){
+    (pr.custom_pts||[]).forEach((cp,i)=>{
+      h+=`<div class="sf-row" style="flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:6px;width:100%">
+          <span style="font-size:14px">${cp.ico||'🔌'}</span>
+          <input style="flex:1;min-width:60px;background:transparent;border:none;border-bottom:1px solid transparent;font-size:12px;color:var(--t1);outline:none;padding:2px 0"
+            value="${escHtml(cp.lbl)}"
+            oninput="updCptLbl(${i},this.value)"
+            onfocus="this.style.borderBottomColor='var(--acc)'"
+            onblur="this.style.borderBottomColor='transparent'">
+          <input type="number" class="sf-inp" value="${cp.price||0}" min="0" step="any"
+            oninput="updCptPrice(${i},parseFloat(this.value)||0)">
+          <span style="font-size:11px;color:var(--t3)">₽</span>
+          <button onclick="editCustomPt(${i})" style="background:var(--bg3);border:1px solid var(--bdr);border-radius:6px;padding:3px 7px;font-size:12px;cursor:pointer">✎</button>
+          <button onclick="delCustomPt(${i})" style="background:var(--rd-l,#fef2f2);border:1px solid #fca5a5;border-radius:6px;padding:3px 7px;font-size:12px;color:#ef4444;cursor:pointer">✕</button>
+        </div>
       </div>`;
     });
-    h+=`</div>`;
   }
-  h+=`<button class="btn" style="width:100%" onclick="openCustomPtEditor(-1)">+ Добавить свою точку</button>`;
+  h+=`</div><div style="margin-top:4px"><button class="btn" style="width:100%" onclick="openCustomPtEditor(-1)">+ Добавить свою точку</button></div>`;
+  if(inB)inB=false; // уже закрыт выше через добавление кнопки
+
 
   // Сохранить / Сброс
   h+=`<div style="padding:14px 0 0;display:flex;gap:10px">
     <button class="btn btn-p" style="flex:1" onclick="saveSet()">Сохранить</button>
-    <button class="btn btn-d" onclick="resetSet()">Сброс</button>
+    <button class="btn btn-d" onclick="resetSet()">Сброс цен</button>
   </div>`;
 
   // Резервная копия
@@ -2222,11 +2258,25 @@ function openCustomPtEditor(idx){
       <div class="fl"><label>Цена работы, ₽/шт</label>
         <input type="number" id="cpt-price" value="${cp?.price||0}" min="0"></div>
     </div>
+    <div class="r2">
+      <div class="fl"><label style="display:flex;align-items:center;gap:4px">Подрозетников
+        <span style="font-size:10px;color:var(--t3)">(0 = нет)</span></label>
+        <input type="number" id="cpt-boxes" value="${cp?.boxes!=null?cp.boxes:(cp?.grp==='roz'?1:0)}" min="0" max="10" placeholder="1"></div>
+      <div class="fl"><label style="display:flex;align-items:center;gap:4px">Мощность, кВт
+        <span style="font-size:10px;color:var(--t3)">(для АВ)</span></label>
+        <input type="number" id="cpt-pwr" value="${cp?.pwr||''}" min="0" step="0.1" placeholder="не задана"></div>
+    </div>
     <div class="fl">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
         <input type="checkbox" id="cpt-uzo" ${cp?.needUzo?'checked':''} style="width:16px;height:16px">
         <span style="font-size:12px;color:var(--t2)">Нужно УЗО (влажная зона, водопотребление)</span>
       </label>
+    </div>
+    <div style="background:var(--bg3);border-radius:var(--rs);padding:8px 10px;margin-top:4px;font-size:11px;color:var(--t3);line-height:1.6">
+      <b style="color:var(--t2)">Подрозетников</b> — сколько монтируется под эту точку.<br>
+      Розетка одиночная = 1, двойная = 1 (блок), тройная блоком = 1 или 3 (если отдельные).<br>
+      <b style="color:var(--t2)">Мощность кВт</b> — если задана, автомат рассчитается по току. Иначе — по кабелю.<br>
+      <b style="color:var(--t2)">Группа "Мощные"</b> — отдельная линия от щитка напрямую до прибора.
     </div>
     <div style="display:flex;gap:8px;margin-top:4px">
       <button class="btn btn-p" style="flex:1" onclick="saveCustomPt(${idx})">
@@ -2266,33 +2316,44 @@ function saveCustomPt(idx){
   const grp=document.getElementById('cpt-grp')?.value||'roz';
   const price=parseFloat(document.getElementById('cpt-price')?.value)||0;
   const needUzo=document.getElementById('cpt-uzo')?.checked||false;
+  const boxes=parseInt(document.getElementById('cpt-boxes')?.value??1)||0;
+  const pwrVal=parseFloat(document.getElementById('cpt-pwr')?.value)||null;
 
   const pt={
     id: idx>=0 ? ((PR().custom_pts||[])[idx]?.id || 'cpt_'+Date.now()) : 'cpt_'+Date.now(),
     lbl,ico,cable,hStd,grp,
+    boxes,
     needUzo,
-    price, // цена работы
+    price,
     isCustom:true,
   };
-  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_WORK};
-  if(!PR_MAP[CUR].custom_pts)PR_MAP[CUR].custom_pts=[];
-  if(idx>=0)PR_MAP[CUR].custom_pts[idx]=pt;
-  else PR_MAP[CUR].custom_pts.push(pt);
-  save();
-  rSet();
+  if(pwrVal)pt.pwr=pwrVal;
+  if(!GLOBAL.custom_pts)GLOBAL.custom_pts=[];
+  if(idx>=0)GLOBAL.custom_pts[idx]=pt;
+  else GLOBAL.custom_pts.push(pt);
+  save();rSet();
 }
 
 function editCustomPt(idx){openCustomPtEditor(idx)}
 function delCustomPt(idx){
   if(!confirm('Удалить точку?'))return;
-  if(PR_MAP[CUR]?.custom_pts)PR_MAP[CUR].custom_pts.splice(idx,1);
+  if(GLOBAL.custom_pts)GLOBAL.custom_pts.splice(idx,1);
   save();rSet();
 }
 
 function updCptPrice(idx,val){
+  if(!GLOBAL.custom_pts)GLOBAL.custom_pts=[];
+  if(GLOBAL.custom_pts[idx])GLOBAL.custom_pts[idx].price=val;
+  save();
+}
+function updCptLbl(idx,val){
+  if(!GLOBAL.custom_pts?.[idx])return;
+  GLOBAL.custom_pts[idx].lbl=val;save();
+}
+function setLabel(key,val){
   if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_WORK};
-  if(!PR_MAP[CUR].custom_pts)return;
-  if(PR_MAP[CUR].custom_pts[idx])PR_MAP[CUR].custom_pts[idx].price=val;
+  if(!PR_MAP[CUR].labels)PR_MAP[CUR].labels={};
+  PR_MAP[CUR].labels[key]=val;
   save();
 }
 
@@ -2317,25 +2378,22 @@ function delBrandExtra(bk,i){
   save();openBrandEditor(bk);
 }
 function updCW(i,k,val){
-  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_WORK};
+  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_CLIENT};
   if(!PR_MAP[CUR].custom_works)PR_MAP[CUR].custom_works=[];
-  PR_MAP[CUR].custom_works[i][k]=val;
-}
-function addCW(){
-  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_WORK};
-  if(!PR_MAP[CUR].custom_works)PR_MAP[CUR].custom_works=[];
-  PR_MAP[CUR].custom_works.push({lbl:'',price:0,qty:1,unit:'шт'});
-  save();rSet();
+  PR_MAP[CUR].custom_works[i][k]=val;save();
 }
 function delCW(i){
   if(PR_MAP[CUR]?.custom_works)PR_MAP[CUR].custom_works.splice(i,1);
-  save();rSet();
+  save();openObjSettings();
 }
-function updCM(i,k,val){if(!PR_MAP[CUR])return;if(!PR_MAP[CUR].custom_mats)PR_MAP[CUR].custom_mats=[];PR_MAP[CUR].custom_mats[i][k]=val}
-function addCM(){if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_WORK};if(!PR_MAP[CUR].custom_mats)PR_MAP[CUR].custom_mats=[];PR_MAP[CUR].custom_mats.push({lbl:'',price:0,qty:1,qty_mode:'шт'});save();rSet()}
-function delCM(i){if(PR_MAP[CUR]?.custom_mats)PR_MAP[CUR].custom_mats.splice(i,1);save();rSet()}
+function updCM(i,k,val){
+  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_CLIENT};
+  if(!PR_MAP[CUR].custom_mats)PR_MAP[CUR].custom_mats=[];
+  PR_MAP[CUR].custom_mats[i][k]=val;save();
+}
+function delCM(i){if(PR_MAP[CUR]?.custom_mats)PR_MAP[CUR].custom_mats.splice(i,1);save();openObjSettings()}
 function saveSet(){save();const b=event.target;b.textContent='Сохранено ✓';b.style.background='var(--gr)';setTimeout(()=>{b.textContent='Сохранить';b.style.background=''},1500)}
-function resetSet(){if(!confirm('Сбросить расценки?'))return;if(PR_MAP[CUR]){const old=PR_MAP[CUR];PR_MAP[CUR]={...DP_WORK,brand:old.brand,phase:old.phase,relay:old.relay,obj_name:old.obj_name,custom_pts:old.custom_pts||[]}}save();rSet()}
+function resetSet(){if(!confirm('Сбросить все расценки до стандартных?'))return;GLOBAL={...DP_GLOBAL};save();rSet()}
 function setBrandPrice(bk,key,val,defVal){
   if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_WORK};
   if(!PR_MAP[CUR].brand_prices)PR_MAP[CUR].brand_prices={};
