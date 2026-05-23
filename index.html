@@ -382,50 +382,51 @@ function autoProtForGrp(grpKey, roomType){
 const BEND=0.6, RAZD=0.8, ZAP=1.15;
 
 // Мощный потребитель — один прямой кабель
+// Возвращает {total, horiz, vert}
 function calcLenPwr(r, innerDist, ptH){
   const щD=parseFloat(r.dist)||10;
   const roomH=parseFloat(r.h)||2.7;
   const hM=Math.min((ptH!=null?parseFloat(ptH):200)/1000, roomH);
   const drop=Math.max(0, roomH-hM);
-  return Math.ceil((щD + (parseFloat(innerDist)||0) + drop + BEND + RAZD)*ZAP);
+  const horiz=щD+(parseFloat(innerDist)||0);
+  const vert=drop;
+  const total=Math.ceil((horiz+vert+BEND+RAZD)*ZAP);
+  return {total, horiz:Math.ceil(horiz*ZAP), vert:Math.ceil((vert+BEND+RAZD)*ZAP)};
 }
 
-// Розетки и выключатели — кабель петляет через все точки
-// maxDist = расстояние от коробки до самой дальней точки (м)
-// n = количество точек на этой линии
-// ptH = высота установки точек (мм)
+// Розетки и выключатели
+// Возвращает {total, horiz, vert}
 function calcLenRoz(r, maxDist, ptH, n){
   const щD=parseFloat(r.dist)||10;
   const roomH=parseFloat(r.h)||2.7;
   const hM=Math.min((ptH!=null?parseFloat(ptH):200)/1000, roomH);
-  const drop=Math.max(0, roomH-hM);  // спуск от потолка до точки
+  const drop=Math.max(0, roomH-hM);
   const nPts=Math.max(1, n||1);
   const mD=parseFloat(maxDist)||0;
-  // Горизонтальный прогон по потолку = maxDist (кабель идёт до самой дальней точки)
-  // Вертикаль: (nPts-1) полных петель (спуск+подъём) + финальный спуск
-  const vertical=(nPts-1)*2*drop + drop;
-  return Math.ceil((щD + mD + vertical + BEND + RAZD)*ZAP);
+  const horiz=щD+mD;
+  const vertical=(nPts-1)*2*drop+drop;
+  const total=Math.ceil((horiz+vertical+BEND+RAZD)*ZAP);
+  return {total, horiz:Math.ceil(horiz*ZAP), vert:Math.ceil((vertical+BEND+RAZD)*ZAP)};
 }
 
-// Освещение — прогон по потолку + отводы
-// maxDist = расстояние до самого дальнего светильника
-// switchH = высота выключателей в группе (мм), 0 если нет
-// nLights = кол-во потолочных светильников
-// nSwitches = кол-во выключателей
+// Освещение
+// Возвращает {total, horiz, vert}
 function calcLenLight(r, maxDist, switchH, nLights, nSwitches){
   const щD=parseFloat(r.dist)||10;
   const roomH=parseFloat(r.h)||2.7;
   const mD=parseFloat(maxDist)||0;
-  // Отводы на светильники: 0.5м каждый (короткий хвост)
   const lightSpurs=(nLights||0)*0.5;
-  // Спуск на выключатели: петля на каждый кроме последнего
   let switchV=0;
   if(nSwitches>0){
     const sH=Math.min((switchH||900)/1000, roomH);
     const sDrop=Math.max(0, roomH-sH);
-    switchV=(nSwitches-1)*2*sDrop + sDrop;
+    switchV=(nSwitches-1)*2*sDrop+sDrop;
   }
-  return Math.ceil((щD + mD + lightSpurs + switchV + BEND + RAZD)*ZAP);
+  // Горизонталь = магистраль по потолку; vert = отводы светильников + спуски выключателей
+  const horiz=щD+mD;
+  const vert=lightSpurs+switchV;
+  const total=Math.ceil((horiz+vert+BEND+RAZD)*ZAP);
+  return {total, horiz:Math.ceil((horiz+lightSpurs)*ZAP), vert:Math.ceil((switchV+BEND+RAZD)*ZAP)};
 }
 
 // Строит список линий для комнаты
@@ -486,8 +487,11 @@ function calcRoomLines(r){
         }
       });
       len=Math.ceil(((parseFloat(r.dist)||10)+totalInner+0.6+0.8)*1.15);
+      // box mode: горизонталь = щD, вертикаль = всё остальное (спуски)
+      var _boxHoriz=Math.ceil((parseFloat(r.dist)||10)*ZAP);
+      var _lenObj={total:len, horiz:_boxHoriz, vert:Math.max(0,len-_boxHoriz)};
+      len=_lenObj;
     } else if(isLight){
-      // Освещение: разделяем светильники и выключатели
       const nLights=bg.qtys.reduce((s,x)=>{
         const pt=PT.find(p=>p.id===x.ptId);
         return s+(pt&&pt.hStd===0?x.qty:0);
@@ -496,28 +500,30 @@ function calcRoomLines(r){
         const pt=PT.find(p=>p.id===x.ptId);
         return s+(pt&&pt.hStd>0?x.qty:0);
       },0);
-      // Средняя высота выключателей
       const switchH=bg.qtys.reduce((s,x)=>{
         const pt=PT.find(p=>p.id===x.ptId);
         return pt&&pt.hStd>0?Math.max(s,pt.hStd):s;
       },900);
-      // Для каждой линии — пропорциональное количество
       const qPerLine=Math.ceil(totalQty/numLines);
       const nLPerLine=Math.ceil(nLights/numLines);
       const nSPerLine=Math.ceil(nSwitches/numLines);
       len=calcLenLight(r, maxDist, switchH, nLPerLine, nSPerLine);
     } else {
-      // Розетки: петли через все точки на линии
       const qPerLine=Math.min(totalQty, maxPerLine);
       len=calcLenRoz(r, maxDist, bg.pt?.hStd, qPerLine);
     }
+
+    // Разворачиваем объект {total,horiz,vert} или оставляем число
+    const lenObj=typeof len==='object'?len:{total:len,horiz:Math.ceil(len*0.4),vert:Math.ceil(len*0.6)};
+    const lenTotal=lenObj.total;
+    const lenHoriz=lenObj.horiz; // горизонталь по потолку
+    const lenVert=lenObj.vert;   // вертикаль по стенам
 
     const workPerUnit=bg.qtys.reduce((s,x)=>{
       let wp=PR()['w_'+x.ptId];
       if(wp==null){const cpt=(PR().custom_pts||[]).find(p=>p.id===x.ptId);wp=cpt?.price||0;}
       return s+wp*x.qty;
     },0);
-    // Накладные точки — своя цена уже в w_roz1n и т.д., surfaceMult не нужен
     const surfaceMult=1;
 
     for(let li=0;li<numLines;li++){
@@ -529,7 +535,9 @@ function calcRoomLines(r){
       const autoProt=autoProtForGrp(baseGrp,roomType);
       const prot=overr?.prot||autoProt;
       lines.push({
-        label:lbl+(isSurface?' [накл.]':''), cable:bg.cable, len, qty:Math.max(1,qThis),
+        label:lbl+(isSurface?' [накл.]':''), cable:bg.cable,
+        len:lenTotal, lenHoriz, lenVert,
+        qty:Math.max(1,qThis),
         boxes:Math.round(bg.boxes/numLines), work:Math.round(workPerUnit*surfaceMult/numLines),
         roomName:r.name, щитокId:r.щитокId, grp:grpKey, is_pwr:isPwr, isSurface,
         prot, overrideKey:overKey, manual_prot:!!overr?.prot,
@@ -628,17 +636,28 @@ function calcSmeta(){
   const rashodniBase=cableCost+gofraCost+boxCost+wagoCost;
   const rashodniCost=rashodniPct>0?Math.round(rashodniBase*rashodniPct/100):0;
   const totalMat=cableCost+gofraCost+boxCost+wagoCost+protCost+щитокCost+vvodCost+relayCost+customMatCost+brandExtraCost+rashodniCost;
-  const wCable=Math.ceil(totalCableM*pr.w_cable);
-  // Штробление/гофра/лоток считается по метражу линий каждой комнаты
+  const wCable=Math.ceil(totalCableM*(pr.w_cable||50));
+  // Прокладка считается раздельно: потолок (ceilingMode) и стены (wallMode)
+  // Старое поле cablingMode используется как fallback для обратной совместимости
   let wStroba=0;
   const cl2=client();
   lines.forEach(l=>{
     const r=(cl2?.комнаты||[]).find(c=>c.name===l.roomName);
-    const cm=r?.cablingMode||'stroba';
-    if(l.isSurface||r?.surface)return; // накладные линии — штробление не считается
-    if(cm==='stroba') wStroba+=l.len*(pr.w_stroba||120);
-    else if(cm==='gofra') wStroba+=l.len*(pr.w_gofra||40);
-    else if(cm==='lotok') wStroba+=l.len*(pr.w_lotok||30);
+    if(l.isSurface||r?.surface) return; // накладные — без прокладки
+    const fallback=r?.cablingMode||'stroba';
+    const cm=r?.wallMode||fallback;        // стены
+    const cc=r?.ceilingMode||             // потолок
+      (fallback==='stroba'?'open':fallback); // штроба на потолке невозможна → open
+    const lH=l.lenHoriz||0; // горизонталь по потолку
+    const lV=l.lenVert||0;  // вертикаль по стенам
+    // Потолок: open=0₽, gofra=w_gofra, lotok=w_lotok
+    if(cc==='gofra')  wStroba+=lH*(pr.w_gofra||40);
+    else if(cc==='lotok') wStroba+=lH*(pr.w_lotok||30);
+    // else open: 0р — кабель просто лежит
+    // Стены: stroba=w_stroba, gofra=w_gofra, lotok=w_lotok
+    if(cm==='stroba') wStroba+=lV*(pr.w_stroba||120);
+    else if(cm==='gofra') wStroba+=lV*(pr.w_gofra||40);
+    else if(cm==='lotok') wStroba+=lV*(pr.w_lotok||30);
   });
   wStroba=Math.ceil(wStroba);
   const wBoxes=totalBoxes*pr.w_podroz,wЩ=щитки.length*pr.w_щиток;
@@ -692,7 +711,9 @@ function openRF(i){
   curPts=i!=null?{...(r.pts||{})}:{};
   curType=r.type||'living';
   curWiringType=r.wiringType||'loop';
-  curCablingMode=r.cablingMode||'stroba';
+  curCablingMode=r.cablingMode||'stroba'; // legacy fallback
+  curWallMode=r.wallMode||(r.cablingMode||'stroba');
+  curCeilingMode=r.ceilingMode||(r.cablingMode==='stroba'?'open':(r.cablingMode||'open'));
   curSurface=r.surface||false;
   // Загружаем сохранённые расстояния — здесь единственное место инициализации
   curPtDists=i!=null?{...(r.ptDists||{})}:{};
@@ -728,12 +749,25 @@ function openRF(i){
     </div>
     <div class="slabel">Точки подключения</div>
     <div id="pts-c"></div>
-    <div class="fl" style="margin-top:12px"><label>Способ прокладки</label>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px" id="cm-grid">
+    <div class="fl" style="margin-top:4px"><label>Стены — прокладка</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px" id="wm-grid">
         ${['stroba','gofra','lotok'].map(cm=>{
-          const sel=curCablingMode===cm;
+          const sel=curWallMode===cm;
           const info={stroba:{ico:'🔨',lbl:'Штроба'},gofra:{ico:'🌀',lbl:'Гофра'},lotok:{ico:'📋',lbl:'Лоток'}}[cm];
-          return `<div id="cm-${cm}" onclick="selCabling('${cm}')"
+          return `<div id="wm-${cm}" onclick="selWall('${cm}')"
+            style="border:2px solid ${sel?'var(--acc)':'var(--bdr)'};border-radius:var(--rs);padding:9px 6px;text-align:center;cursor:pointer;background:${sel?'var(--acc-l)':'var(--bg)'}">
+            <div style="font-size:20px">${info.ico}</div>
+            <div style="font-size:10px;font-weight:600;color:${sel?'var(--acc)':'var(--t2)'};margin-top:2px">${info.lbl}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+    <div class="fl" style="margin-top:4px"><label>Потолок — прокладка</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px" id="cm-grid">
+        ${['open','gofra','lotok'].map(cm=>{
+          const sel=curCeilingMode===cm;
+          const info={open:{ico:'〰️',lbl:'Открыто'},gofra:{ico:'🌀',lbl:'Гофра'},lotok:{ico:'📋',lbl:'Лоток'}}[cm];
+          return `<div id="cm-${cm}" onclick="selCeiling('${cm}')"
             style="border:2px solid ${sel?'var(--acc)':'var(--bdr)'};border-radius:var(--rs);padding:9px 6px;text-align:center;cursor:pointer;background:${sel?'var(--acc-l)':'var(--bg)'}">
             <div style="font-size:20px">${info.ico}</div>
             <div style="font-size:10px;font-weight:600;color:${sel?'var(--acc)':'var(--t2)'};margin-top:2px">${info.lbl}</div>
@@ -748,9 +782,20 @@ function openRF(i){
   rPtsList();push('s-rf',i!=null?'Изменить комнату':'Новая комната');
 }
 function selType(id){curType=id;document.querySelectorAll('.tc').forEach(el=>el.classList.toggle('sel',el.getAttribute('onclick')===`selType('${id}')`))}
-function selCabling(cm){
-  curCablingMode=cm;
+function selWall(cm){
+  curWallMode=cm;
   ['stroba','gofra','lotok'].forEach(c=>{
+    const el=document.getElementById('wm-'+c);if(!el)return;
+    const sel=c===cm;
+    el.style.borderColor=sel?'var(--acc)':'var(--bdr)';
+    el.style.background=sel?'var(--acc-l)':'var(--bg)';
+    const lbl=el.querySelector('div:nth-child(2)');
+    if(lbl)lbl.style.color=sel?'var(--acc)':'var(--t2)';
+  });
+}
+function selCeiling(cm){
+  curCeilingMode=cm;
+  ['open','gofra','lotok'].forEach(c=>{
     const el=document.getElementById('cm-'+c);if(!el)return;
     const sel=c===cm;
     el.style.borderColor=sel?'var(--acc)':'var(--bdr)';
@@ -758,7 +803,9 @@ function selCabling(cm){
     const lbl=el.querySelector('div:nth-child(2)');
     if(lbl)lbl.style.color=sel?'var(--acc)':'var(--t2)';
   });
-}function selWiring(type){
+}
+function selCabling(cm){selWall(cm);} // legacy alias
+function selWiring(type){
   // Сохраняем dist поля перед перерисовкой
   document.querySelectorAll('input[id^="dist_"]').forEach(inp=>{
     const k=inp.id.replace('dist_','');
@@ -781,6 +828,8 @@ let curPtDists={};
 let curWiringType='loop';
 // curCablingMode: 'stroba' | 'gofra' | 'lotok'
 let curCablingMode='stroba';
+let curWallMode='stroba';
+let curCeilingMode='open';
 // curSurface: true = накладной монтаж (без штроб и подрозетников)
 let curSurface=false;
 
@@ -957,7 +1006,7 @@ function chQ(id,d){
   document.querySelectorAll('.qb').forEach(b=>{
     if((b.getAttribute('onclick')||'').includes(`'${id}',-1`))b.disabled=curPts[id]===0;
   });
-}function saveRoom(){const cl=client();if(!cl)return;if(!cl.комнаты)cl.комнаты=[];const r={name:v('рн')||'Комната',type:curType,l:parseFloat(v('рl'))||4,w:parseFloat(v('рw'))||3,h:parseFloat(v('рh'))||2.7,floor:v('рэ'),щитокId:parseInt(v('рщ'))||0,dist:parseFloat(v('рд'))||10,pts:{...curPts},ptDists:{...curPtDists},wiringType:curWiringType,cablingMode:curCablingMode,surface:curSurface,lineOverrides:eR!=null?((cl.комнаты[eR]||{}).lineOverrides||{}):{}};if(eR!=null)cl.комнаты[eR]=r;else cl.комнаты.push(r);save();pop();rRooms()}
+}function saveRoom(){const cl=client();if(!cl)return;if(!cl.комнаты)cl.комнаты=[];const r={name:v('рн')||'Комната',type:curType,l:parseFloat(v('рl'))||4,w:parseFloat(v('рw'))||3,h:parseFloat(v('рh'))||2.7,floor:v('рэ'),щитокId:parseInt(v('рщ'))||0,dist:parseFloat(v('рд'))||10,pts:{...curPts},ptDists:{...curPtDists},wiringType:curWiringType,wallMode:curWallMode,ceilingMode:curCeilingMode,cablingMode:curWallMode,surface:curSurface,lineOverrides:eR!=null?((cl.комнаты[eR]||{}).lineOverrides||{}):{}};if(eR!=null)cl.комнаты[eR]=r;else cl.комнаты.push(r);save();pop();rRooms()}
 function delR(i){if(!confirm('Удалить?'))return;const cl=client();if(!cl)return;cl.комнаты.splice(i,1);save();rRooms()}
 function openRD(i){
   const cl=client();if(!cl)return;const r=(cl.комнаты||[])[i];if(!r)return;eR=i;
