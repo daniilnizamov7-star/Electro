@@ -461,13 +461,11 @@ function calcRoomLines(r){
       const ZAPAS_END=0.3; // запас на подключение в точке
       // Собираем расстояния для всех точек этой группы
       let totalInner=0;
-      let ptIdx=0;
       bg.qtys.forEach(x=>{
         for(let bi=0;bi<x.qty;bi++){
-          const bKey=`box_${grpKey}_${x.ptId}_${ptIdx}`;
+          const bKey=`box_${x.ptId}_${bi}`;
           const d=parseFloat((r.ptDists||{})[bKey])||0;
           totalInner+=d+drop+ZAPAS_END;
-          ptIdx++;
         }
       });
       len=Math.ceil(((parseFloat(r.dist)||10)+totalInner+0.6+0.8)*1.15);
@@ -550,8 +548,8 @@ function getPueWarns(){
     // Балкон/улица
     if((r.type==='balcony'||r.type==='outdoor')&&((pts.roz1||0)+(pts.roz2||0))>0)
       errors.push(`${r.name}: на балконе/улице розетки минимум IP44 (ПУЭ 7.1.50)`);
-    // Варочная — 380В
-    if(pts.pwr_var)notices.push(`${r.name}: варочная — проверь наличие 3-фазного ввода 380В`);
+    // Варочная — 380В обязательно
+    if(pts.pwr_var)errors.push(`${r.name}: варочная панель работает ТОЛЬКО от 380В — нужен 3-фазный ввод и кабель 3×6мм² (ПУЭ)`)
   });
   // Ручно убранное обязательное УЗО
   getAllLines().forEach(l=>{
@@ -687,15 +685,22 @@ function openRF(i){
 }
 function selType(id){curType=id;document.querySelectorAll('.tc').forEach(el=>el.classList.toggle('sel',el.getAttribute('onclick')===`selType('${id}')`))}
 function selWiring(type){
+  // Сохраняем dist поля перед перерисовкой
+  document.querySelectorAll('input[id^="dist_"]').forEach(inp=>{
+    const k=inp.id.replace('dist_','');
+    const val=parseFloat(inp.value);
+    curPtDists[k]=isNaN(val)?0:val;
+  });
   curWiringType=type;
   ['loop','box'].forEach(t=>{
     const el=document.getElementById('wt-'+t);if(!el)return;
     const sel=t===type;
     el.style.borderColor=sel?'var(--acc)':'var(--bdr)';
     el.style.background=sel?'var(--acc-l)':'var(--bg)';
-    el.querySelector('div:nth-child(2)').style.color=sel?'var(--acc)':'var(--t2)';
+    const lbl=el.querySelector('div:nth-child(2)');
+    if(lbl)lbl.style.color=sel?'var(--acc)':'var(--t2)';
   });
-  rPtsList(); // перерисовываем поля — в режиме коробки другие поля
+  rPtsList();
 }// curPtDists хранит расстояния от распредкоробки до групп точек
 let curPtDists={};
 // curWiringType: 'loop' = шлейф (коробка в подрозетнике), 'box' = коробка в потолке
@@ -736,14 +741,21 @@ function rPtsList(){
     const distVal=curPtDists[grp]>0?curPtDists[grp]:'';
     h+=`<div class="slabel" style="margin-top:12px">${GRPLBL_FULL[grp]}</div>`;
     // Поле расстояния — всегда видимое над группой
-    h+=`<div style="background:var(--acc-l);border:1.5px solid var(--acc);border-radius:var(--rs);padding:8px 12px;margin-bottom:6px;display:flex;align-items:center;gap:8px">
-      <span style="flex:1;font-size:11px;color:var(--acc);font-weight:500">${DIST_HINT[grp]||'До дальней точки, м'}</span>
-      <input type="number" id="dist_${grp}"
-        style="width:70px;background:var(--bg2);border:1.5px solid var(--acc);border-radius:6px;padding:5px 8px;font-size:13px;font-weight:600;text-align:center;outline:none;color:var(--acc)"
-        placeholder="0" value="${distVal}" min="0" step="0.5"
-        oninput="curPtDists['${grp}']=parseFloat(this.value)||0">
-      <span style="font-size:11px;color:var(--acc)">м</span>
-    </div>`;
+    // В режиме "Коробка" — каждая точка имеет своё расстояние, общее поле не нужно
+    if(curWiringType!=='box'){
+      h+=`<div style="background:var(--acc-l);border:1.5px solid var(--acc);border-radius:var(--rs);padding:8px 12px;margin-bottom:6px;display:flex;align-items:center;gap:8px">
+        <span style="flex:1;font-size:11px;color:var(--acc);font-weight:500">${DIST_HINT[grp]||'До дальней точки, м'}</span>
+        <input type="number" id="dist_${grp}"
+          style="width:70px;background:var(--bg2);border:1.5px solid var(--acc);border-radius:6px;padding:5px 8px;font-size:13px;font-weight:600;text-align:center;outline:none;color:var(--acc)"
+          placeholder="0" value="${distVal}" min="0" step="0.5"
+          oninput="curPtDists['${grp}']=parseFloat(this.value)||0">
+        <span style="font-size:11px;color:var(--acc)">м</span>
+      </div>`;
+    } else {
+      h+=`<div style="background:var(--bg3);border:1px solid var(--bdr);border-radius:var(--rs);padding:8px 12px;margin-bottom:6px;font-size:11px;color:var(--t3)">
+        📦 Коробка в потолке — укажите расстояние от коробки до каждой точки ниже
+      </div>`;
+    }
     h+=`<div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;box-shadow:var(--shd)">`;
     pts.forEach(pt=>{
       const q=curPts[pt.id]||0;
@@ -752,7 +764,7 @@ function rPtsList(){
       let boxFields='';
       if(curWiringType==='box'&&q>0){
         for(let bi=0;bi<q;bi++){
-          const bKey=`box_${grp}_${pt.id}_${bi}`;
+          const bKey=`box_${pt.id}_${bi}`;
           const bVal=curPtDists[bKey]>0?curPtDists[bKey]:'';
           boxFields+=`<div style="display:flex;align-items:center;gap:5px;margin-top:4px">
             <span style="font-size:10px;color:var(--t3);min-width:60px">Точка ${bi+1}, м:</span>
