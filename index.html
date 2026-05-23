@@ -740,12 +740,28 @@ function calcSmeta(){
   // Защита по типу каждой линии
   let protCost=0;
   lines.forEach(l=>{const p=l.prot;if(p.type==='auto')protCost+=autoP(p.nom,1);else if(p.type==='dif')protCost+=difP(p.nom,p.ma);else protCost+=uzoP(25,p.ma||30)+autoP(p.nom,1)});
-  // Щитки
   const щитки=cl.щитки||[];
   const щитокCost=щитки.reduce((_,x,i)=>_+щP(buildЩитокPlan(i).slots),0);
+  // Мощность объекта для расчёта вводного автомата и кабеля
   const totalKw=(cl.комнаты||[]).reduce((s,r)=>s+Object.entries(r.pts||{}).reduce((ps,[pid,q])=>{const pt=PT.find(p=>p.id===pid);return ps+(pt?.pwr||0.3)*q},0),0);
   const vNom=totalKw<=15?40:totalKw<=22?50:63;
-  const vvodCost=щитки.length*autoP(vNom,pr.phase===3?3:1);
+  const vvodCost=щитки.reduce((s,щ)=>щ.needEntry!==false?s+autoP(vNom,pr.phase===3?3:1):s,0);
+  // Вводной кабель: считаем только для щитков с needEntry=true
+  const ENTRY_CABLE_PRICE={'3x10':cPrice('3x10'),'3x16':cPrice('3x16'),'3x25':90,'4x10':cPrice('3x10')*1.3,'4x16':cPrice('3x16')*1.3};
+  let entryCableM=0,entryCableCost=0;
+  щитки.forEach(щ=>{
+    if(щ.needEntry===false)return;
+    const totalKwЩ=(cl.комнаты||[]).filter(r=>r.щитокId===щитки.indexOf(щ)).reduce((s,r)=>s+Object.entries(r.pts||{}).reduce((ps,[pid,q])=>{const pt=PT.find(p=>p.id===pid);return ps+(pt?.pwr||0.3)*q},0),0);
+    let cable=щ.entryCable||'auto';
+    if(cable==='auto') cable=totalKwЩ<=15?(pr.phase===3?'4x10':'3x10'):totalKwЩ<=22?(pr.phase===3?'4x16':'3x16'):'3x16';
+    const dist=Math.ceil((parseFloat(щ.dist)||5)*1.15+RAZD); // от ввода до щитка + запас
+    const pricePerM=ENTRY_CABLE_PRICE[cable]||cPrice('3x10');
+    entryCableM+=dist;
+    entryCableCost+=dist*pricePerM;
+    if(!cables[cable])cables[cable]=0;
+    cables[cable]+=dist;
+  });
+  entryCableCost=Math.ceil(entryCableCost);
   const relayCost=pr.relay?(щитки.length*(pr.phase===3?b.relay_3f:b.relay_1f)):0;
   const customMatCost=(pr.custom_mats||[]).reduce((s,m)=>s+(m.price||0)*(m.qty||0),0);
   const brandExtras=(pr.brand_extra||{})[pr.brand||'IEK']||[];
@@ -753,7 +769,7 @@ function calcSmeta(){
   const rashodniPct=parseFloat(pr.rashodni_pct)||0;
   const rashodniBase=cableCost+gofraCost+boxCost+wagoCost;
   const rashodniCost=rashodniPct>0?Math.round(rashodniBase*rashodniPct/100):0;
-  const totalMat=cableCost+gofraCost+boxCost+wagoCost+protCost+щитокCost+vvodCost+relayCost+customMatCost+brandExtraCost+rashodniCost;
+  const totalMat=cableCost+gofraCost+boxCost+wagoCost+protCost+щитокCost+vvodCost+entryCableCost+relayCost+customMatCost+brandExtraCost+rashodniCost;
   const wCable=Math.ceil(totalCableM*(pr.w_cable||50));
   // Прокладка считается раздельно: потолок (ceilingMode) и стены (wallMode)
   // Старое поле cablingMode используется как fallback для обратной совместимости
@@ -781,7 +797,7 @@ function calcSmeta(){
   const wBoxes=totalBoxes*pr.w_podroz,wЩ=щитки.length*pr.w_щиток;
   const customWorkCost=(pr.custom_works||[]).reduce((s,w)=>s+(w.price||0)*(w.qty||0),0);
   const totalWorkFull=totalWork+wCable+wStroba+wBoxes+wЩ+customWorkCost;
-  return{cables,totalCableM,cableCost,gofra,gofraCost,totalBoxes,boxCost,wago,wagoCost,protCost,щитокCost,vNom,vvodCost,relayCost,customMatCost,brandExtraCost,brandExtras,rashodniCost,rashodniPct,totalMat,customWorkCost,totalWork,wCable,wStroba,wBoxes,wЩ,totalWorkFull,totalPoints,grand:totalMat+totalWorkFull,lines};
+  return{cables,totalCableM,cableCost,gofra,gofraCost,totalBoxes,boxCost,wago,wagoCost,protCost,щитокCost,vNom,vvodCost,entryCableM,entryCableCost,relayCost,customMatCost,brandExtraCost,brandExtras,rashodniCost,rashodniPct,totalMat,customWorkCost,totalWork,wCable,wStroba,wBoxes,wЩ,totalWorkFull,totalPoints,grand:totalMat+totalWorkFull,lines};
 }
 
 function buildЩитокPlan(щитокId){
@@ -894,8 +910,50 @@ function addCM(){
   PR_MAP[CUR].custom_mats.push({lbl:'',price:0,qty:1,qty_mode:'шт'});
   save();openObjSettings();
 }
-function openЩ(i){eЩ=i;const cl=client();const щ=i!=null?(cl?.щитки||[])[i]:{};document.getElementById('щф-c').innerHTML=`<div class="fl"><label>Название</label><input id="щн" value="${щ.name||'Щиток '+((cl?.щитки||[]).length+1)}"></div><div class="fl"><label>Расположение</label><input id="щл" value="${щ.loc||''}"></div><div class="r2"><div class="fl"><label>Этаж</label><select id="щэ"><option value="1" ${(щ.floor||'1')==='1'?'selected':''}>1 этаж</option><option value="2" ${щ.floor==='2'?'selected':''}>2 этаж</option></select></div><div class="fl"><label>До ввода, м</label><input type="number" id="щд" value="${щ.dist||5}" min="1"></div></div>`;push('s-щф',i!=null?'Изменить щиток':'Новый щиток')}
-function saveЩ(){const cl=client();if(!cl)return;if(!cl.щитки)cl.щитки=[];const o={name:v('щн')||'Щиток',loc:v('щл'),floor:v('щэ'),dist:parseFloat(v('щд'))||5};if(eЩ!=null)cl.щитки[eЩ]=o;else cl.щитки.push(o);save();pop()}
+function openЩ(i){
+  eЩ=i;const cl=client();const щ=i!=null?(cl?.щитки||[])[i]:{};
+  const needEntry=щ.needEntry!==false; // по умолчанию true (нужен ввод)
+  const entryCable=щ.entryCable||'auto';
+  document.getElementById('щф-c').innerHTML=`
+    <div class="fl"><label>Название</label><input id="щн" value="${щ.name||'Щиток '+((cl?.щитки||[]).length+1)}"></div>
+    <div class="fl"><label>Расположение</label><input id="щл" value="${щ.loc||''}"></div>
+    <div class="r2">
+      <div class="fl"><label>Этаж</label><select id="щэ">
+        <option value="1" ${(щ.floor||'1')==='1'?'selected':''}>1 этаж</option>
+        <option value="2" ${щ.floor==='2'?'selected':''}>2 этаж</option>
+      </select></div>
+      <div class="fl"><label>До ввода, м</label><input type="number" id="щд" value="${щ.dist||5}" min="1"></div>
+    </div>
+    <div class="fl"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <input type="checkbox" id="щentry" ${needEntry?'checked':''} style="width:16px;height:16px"
+        onchange="document.getElementById('щentry-row').style.display=this.checked?'':'none'">
+      <span style="font-size:13px">Нужен вводной кабель (нет готового ввода)</span>
+    </label></div>
+    <div id="щentry-row" class="fl" style="${needEntry?'':'display:none'}">
+      <label>Сечение ввода</label>
+      <select id="щcable">
+        <option value="auto" ${entryCable==='auto'?'selected':''}>Авто (по мощности объекта)</option>
+        <option value="3x10" ${entryCable==='3x10'?'selected':''}>3×10 мм² (до 15 кВт)</option>
+        <option value="3x16" ${entryCable==='3x16'?'selected':''}>3×16 мм² (до 22 кВт)</option>
+        <option value="3x25" ${entryCable==='3x25'?'selected':''}>3×25 мм² (до 35 кВт)</option>
+        <option value="4x10" ${entryCable==='4x10'?'selected':''}>4×10 мм² 3ф (до 15 кВт)</option>
+        <option value="4x16" ${entryCable==='4x16'?'selected':''}>4×16 мм² 3ф (до 22 кВт)</option>
+      </select>
+    </div>`;
+  push('s-щф',i!=null?'Изменить щиток':'Новый щиток');
+}
+function saveЩ(){
+  const cl=client();if(!cl)return;if(!cl.щитки)cl.щитки=[];
+  const needEntry=document.getElementById('щentry')?.checked!==false;
+  const entryCable=document.getElementById('щcable')?.value||'auto';
+  const o={
+    name:v('щн')||'Щиток',loc:v('щл'),floor:v('щэ'),
+    dist:parseFloat(v('щд'))||5,
+    needEntry, entryCable
+  };
+  if(eЩ!=null)cl.щитки[eЩ]=o;else cl.щитки.push(o);
+  save();pop();
+}
 function delЩ(i){if(!confirm('Удалить щиток?'))return;const cl=client();if(!cl)return;cl.щитки.splice(i,1);cl.комнаты=(cl.комнаты||[]).filter(r=>r.щитокId!==i).map(r=>({...r,щитокId:r.щитокId>i?r.щитокId-1:r.щитокId}));save();rHome()}
 
 // ══ КОМНАТЫ ══
@@ -1591,7 +1649,8 @@ function rSmeta(){
     <div class="mr"><span class="mn">Подрозетники</span><span class="mq">${s.totalBoxes} шт</span><span class="mp">${fmt(s.boxCost)} ₽</span></div>
     <div class="mr"><span class="mn">Клеммники WAGO</span><span class="mq">${s.wago} шт</span><span class="mp">${fmt(s.wagoCost)} ₽</span></div>
     <div class="mr"><span class="mn">Защита (${B().lbl})</span><span class="mq">${s.lines.length} шт</span><span class="mp">${fmt(s.protCost)} ₽</span></div>
-    <div class="mr"><span class="mn">Вводной C${s.vNom}А</span><span class="mq">${(cl.щитки||[]).length} шт</span><span class="mp">${fmt(s.vvodCost)} ₽</span></div>
+    <div class="mr"><span class="mn">Вводной C${s.vNom}А</span><span class="mq">${(cl.щитки||[]).filter(function(щ){return щ.needEntry!==false;}).length} шт</span><span class="mp">${fmt(s.vvodCost)} ₽</span></div>
+    ${s.entryCableM>0?`<div class="mr"><span class="mn">Кабель вводной</span><span class="mq">${s.entryCableM} м</span><span class="mp">${fmt(s.entryCableCost)} ₽</span></div>`:''}
     ${s.relayCost?`<div class="mr"><span class="mn">Реле напряжения</span><span class="mq">${(cl.щитки||[]).length} шт</span><span class="mp">${fmt(s.relayCost)} ₽</span></div>`:''}
     <div class="mr"><span class="mn">Щитки</span><span class="mq">${(cl.щитки||[]).length} шт</span><span class="mp">${fmt(s.щитокCost)} ₽</span></div>
     ${(pr.custom_mats||[]).filter(m=>m.qty>0).map(m=>`<div class="mr"><span class="mn">${m.lbl}</span><span class="mq">${m.qty} ${m.qty_mode}</span><span class="mp">${fmt(m.price*m.qty)} ₽</span></div>`).join('')}
@@ -1643,8 +1702,15 @@ function rZakup(){
   });
   Object.values(protMap).forEach(x=>items.push({cat:'Щиток',name:x.name,qty:x.qty,unit:'шт',bought:false,key:x.key}));
 
-  // Вводной автомат
-  items.push({cat:'Щиток',name:`Автомат вводной C${s.vNom}А`,qty:(cl.щитки||[]).length,unit:'шт',bought:false,key:'vvod'});
+  // Вводной автомат — только для щитков с needEntry
+  const entryЩитки=(cl.щитки||[]).filter(function(щ){return щ.needEntry!==false;});
+  if(entryЩитки.length){
+    items.push({cat:'Щиток',name:`Автомат вводной C${s.vNom}А`,qty:entryЩитки.length,unit:'шт',bought:false,key:'vvod'});
+  }
+  // Вводной кабель
+  if(s.entryCableM>0){
+    items.push({cat:'Щиток',name:`Кабель вводной`,qty:s.entryCableM,unit:'м',bought:false,key:'entry_cable'});
+  }
 
   // Реле напряжения
   if(s.relayCost){
