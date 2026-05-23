@@ -890,7 +890,21 @@ function openObjSettings(){
       <button onclick="delCW(${i})" style="background:var(--rd-l);border:none;border-radius:6px;padding:4px 8px;color:var(--rd);cursor:pointer;font-size:11px">✕</button>
     </div>`;
   });
-  h+=`</div><div style="margin-top:4px"><button class="btn" style="width:100%" onclick="addCW()">+ Добавить вид работы</button></div>`;
+  h+=`</div>`;
+  // Кнопки добавления
+  const wts=GLOBAL.work_templates||[];
+  if(wts.length){
+    h+=`<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px">`;
+    wts.forEach((wt,i)=>{
+      if(!wt.lbl)return;
+      h+=`<button onclick="addWTToObj(${i})"
+        style="background:var(--bg2);border:1.5px solid var(--bdr);border-radius:20px;padding:5px 12px;font-size:11px;cursor:pointer;color:var(--t2)">
+        + ${escHtml(wt.lbl)} (${wt.price}₽)
+      </button>`;
+    });
+    h+=`</div>`;
+  }
+  h+=`<div style="margin-top:6px"><button class="btn" style="width:100%" onclick="addCW()">+ Добавить вид работы вручную</button></div>`;
 
   h+=secHdr('Дополнительные материалы');
   h+=`<div style="font-size:11px;color:var(--t3);margin-bottom:6px">Специфика объекта — попадут в смету и список закупки.</div>`;
@@ -1645,10 +1659,18 @@ function rSmeta(){
   showScr('s-smeta');setBar('smeta');
   const el=document.getElementById('smeta-c');
   const cl=client();
-  if(!cl||(!(cl.комнаты||[]).length&&!(cl.щитки||[]).length)){el.innerHTML=`<div class="empty"><div class="empty-i">📋</div><div class="empty-t">Добавьте щитки и комнаты</div></div>`;return}
+  if(!cl||(!(cl.комнаты||[]).length&&!(cl.щитки||[]).length)){
+    // Показываем выбор заказчика даже если нет данных
+    let h='';
+    if(CLIENTS.length>1) h+=renderClientSwitcher();
+    h+=`<div class="empty"><div class="empty-i">📋</div><div class="empty-t">Добавьте щитки и комнаты</div></div>`;
+    el.innerHTML=h;return;
+  }
   const s=calcSmeta();if(!s)return;
   const{errors,notices}=getPueWarns();const pr=PR();
   let h='';
+  // Переключатель заказчиков
+  if(CLIENTS.length>1) h+=renderClientSwitcher();
   if(pr.obj_name)h+=`<div style="padding:10px 12px 0;font-size:12px;color:var(--t2)">Объект: <b>${pr.obj_name}</b></div>`;
   h+=`<div class="stotal"><div class="stlb">Итого по объекту</div><div class="stval">${fmt(s.grand)} ₽</div><div class="stsu">Материалы ${fmt(s.totalMat)} + Работа ${fmt(s.totalWorkFull)}</div></div>`;
   h+=`<div class="mgrid"><div class="mc"><div class="mclb">Материалы</div><div class="mcv" style="color:var(--acc)">${fmt(s.totalMat)} ₽</div></div><div class="mc"><div class="mclb">Работа</div><div class="mcv" style="color:var(--gr)">${fmt(s.totalWorkFull)} ₽</div></div><div class="mc"><div class="mclb">Кабель</div><div class="mcv" style="color:var(--t2)">${s.totalCableM} м</div></div><div class="mc"><div class="mclb">Линий</div><div class="mcv" style="color:var(--t2)">${s.lines.length}</div></div></div>`;
@@ -1674,7 +1696,10 @@ function rSmeta(){
     <div class="mr"><span class="mn">Щитки</span><span class="mq">${(cl.щитки||[]).length} шт</span><span class="mp">${fmt(s.щитокCost)} ₽</span></div>
     ${(pr.custom_mats||[]).filter(m=>m.qty>0).map(m=>`<div class="mr"><span class="mn">${m.lbl}</span><span class="mq">${m.qty} ${m.qty_mode}</span><span class="mp">${fmt(m.price*m.qty)} ₽</span></div>`).join('')}
     ${s.brandExtras&&s.brandExtras.length?s.brandExtras.map(e=>`<div class="mr"><span class="mn">${e.lbl} (${B().lbl})</span><span class="mq">${e.qty||1} шт</span><span class="mp">${fmt((e.price||0)*(e.qty||1))} ₽</span></div>`).join(''):''}
-    ${s.rashodniCost>0?`<div class="mr" style="background:var(--or-l)"><span class="mn" style="color:var(--or)">🔧 Расходники / непредвиденные (${s.rashodniPct}%)</span><span class="mq"></span><span class="mp" style="color:var(--or)">${fmt(s.rashodniCost)} ₽</span></div>`:''}
+    ${s.rashodniCost>0?`<div class="mr" style="background:var(--or-l)"><span class="mn" style="color:var(--or)">🔧 Расходники (${s.rashodniPct}%)</span><span class="mq"></span><span class="mp" style="color:var(--or)">${fmt(s.rashodniCost)} ₽</span></div>`:''}
+  </div>
+  <div style="margin-top:4px;display:flex;gap:8px">
+    <button class="btn" style="flex:1;font-size:11px" onclick="smetaAddMat()">+ Материал</button>
   </div></div>`;
   // Работа
   h+=`<div class="ssec"><div class="ssec-t">Работа</div><div class="mblk">
@@ -1684,13 +1709,71 @@ function rSmeta(){
     <div class="mr"><span class="mn">Прокладка кабеля</span><span class="mq">${s.totalCableM} м</span><span class="mp">${fmt(s.wCable)} ₽</span></div>
     <div class="mr"><span class="mn">Монтаж подрозетников</span><span class="mq">${s.totalBoxes} шт</span><span class="mp">${fmt(s.wBoxes)} ₽</span></div>
     <div class="mr"><span class="mn">Сборка щитков</span><span class="mq">${(cl.щитки||[]).length} шт</span><span class="mp">${fmt(s.wЩ)} ₽</span></div>
-    ${(pr.custom_works||[]).filter(w=>w.qty>0).map(w=>`<div class="mr"><span class="mn">${w.lbl}</span><span class="mq">${w.qty} ${w.unit||'шт'}</span><span class="mp">${fmt(w.price*w.qty)} ₽</span></div>`).join('')}
+    ${(pr.custom_works||[]).filter(w=>w.qty>0).map((w,i)=>`
+      <div class="mr" style="flex-wrap:wrap;gap:0">
+        <span class="mn">${escHtml(w.lbl)}</span>
+        <span class="mq" style="display:flex;align-items:center;gap:4px">
+          <button onclick="smetaWorkQty(${i},-1)" style="border:none;background:var(--bg3);border-radius:4px;padding:0 6px;font-size:14px;cursor:pointer;color:var(--t2)">−</button>
+          <span style="min-width:24px;text-align:center;font-size:12px">${w.qty}</span>
+          <button onclick="smetaWorkQty(${i},1)" style="border:none;background:var(--bg3);border-radius:4px;padding:0 6px;font-size:14px;cursor:pointer;color:var(--t2)">+</button>
+          ${w.unit||'шт'}
+        </span>
+        <span class="mp">${fmt(w.price*w.qty)} ₽</span>
+        <button onclick="smetaDelWork(${i})" style="border:none;background:transparent;color:#ef4444;cursor:pointer;font-size:11px;padding:0 4px">✕</button>
+      </div>`).join('')}
+  </div>
+  <div style="margin-top:4px">
+    ${(GLOBAL.work_templates||[]).filter(wt=>wt.lbl).map((wt,i)=>`
+      <button onclick="smetaAddFromTemplate(${i})"
+        style="background:var(--bg2);border:1.5px solid var(--bdr);border-radius:20px;padding:5px 12px;font-size:11px;cursor:pointer;color:var(--t2);margin:0 4px 4px 0">
+        + ${escHtml(wt.lbl)} (${wt.price}₽)
+      </button>`).join('')}
+    <button class="btn" style="width:100%;margin-top:4px;font-size:11px" onclick="smetaAddWork()">+ Добавить работу вручную</button>
   </div></div>`;
   h+=`<div style="padding:10px 12px 0;font-size:11px;color:var(--t3)">Марка: ${B().lbl}${pr.phase===3?' · 3ф':''}${pr.relay?' · Реле':''}. Расценки в «Настройках»</div><div style="height:12px"></div>`;
   el.innerHTML=h;
 }
 
-// ══ СПИСОК ЗАКУПКИ ══
+function renderClientSwitcher(){
+  return `<div style="padding:8px 12px;display:flex;gap:6px;overflow-x:auto;border-bottom:1px solid var(--bdr)">
+    ${CLIENTS.map(c=>`<button onclick="switchClient('${c.id}')"
+      style="white-space:nowrap;padding:4px 12px;border-radius:20px;border:1.5px solid ${c.id===CUR?'var(--acc)':'var(--bdr)'};background:${c.id===CUR?'var(--acc-l)':'var(--bg2)'};color:${c.id===CUR?'var(--acc)':'var(--t2)'};font-size:12px;font-weight:${c.id===CUR?'600':'400'};cursor:pointer">
+      ${escHtml(c.name)}
+    </button>`).join('')}
+  </div>`;
+}
+function switchClient(id){CUR=id;save();rSmeta();}
+
+function smetaAddWork(){
+  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_CLIENT};
+  if(!PR_MAP[CUR].custom_works)PR_MAP[CUR].custom_works=[];
+  PR_MAP[CUR].custom_works.push({lbl:'',price:0,qty:1,unit:'шт'});
+  save();rSmeta();
+  // Скролл вниз
+  setTimeout(()=>{const el=document.getElementById('smeta-c');if(el)el.scrollTop=el.scrollHeight;},50);
+}
+function smetaAddFromTemplate(i){
+  const wt=(GLOBAL.work_templates||[])[i];if(!wt)return;
+  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_CLIENT};
+  if(!PR_MAP[CUR].custom_works)PR_MAP[CUR].custom_works=[];
+  PR_MAP[CUR].custom_works.push({lbl:wt.lbl,price:wt.price,qty:1,unit:wt.unit||'шт'});
+  save();rSmeta();
+}
+function smetaWorkQty(i,d){
+  const cw=PR_MAP[CUR]?.custom_works;if(!cw?.[i])return;
+  cw[i].qty=Math.max(0,(cw[i].qty||1)+d);
+  save();rSmeta();
+}
+function smetaDelWork(i){
+  if(PR_MAP[CUR]?.custom_works)PR_MAP[CUR].custom_works.splice(i,1);
+  save();rSmeta();
+}
+function smetaAddMat(){
+  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_CLIENT};
+  if(!PR_MAP[CUR].custom_mats)PR_MAP[CUR].custom_mats=[];
+  PR_MAP[CUR].custom_mats.push({lbl:'',price:0,qty:1,qty_mode:'шт'});
+  save();rSmeta();
+}
 function rZakup(){
   const s=calcSmeta();const cl=client();
   if(!s||!cl){alert('Нет данных для закупки');return}
@@ -2128,6 +2211,7 @@ function rSet(){
     {k:'w_pwr_boj',l:'Водонагреватель',ptId:'pwr_boj'},{k:'w_pwr_stir',l:'Стиральная машина',ptId:'pwr_stir'},
     {k:'w_pwr_pmm',l:'Посудомойка',ptId:'pwr_pmm'},{k:'w_pwr_kond',l:'Кондиционер',ptId:'pwr_kond'},
     {k:'w_pwr_tp',l:'Тёплый пол',ptId:'pwr_tp'},{k:'w_pwr_ps',l:'Полотенцесушитель эл.',ptId:'pwr_ps'},
+    {_cpts:true}, // <- кастомные точки вставятся здесь
     {sec:'Общие расценки (₽/м или ₽/шт)'},
     {k:'w_stroba',l:'Штробление, м'},{k:'w_cable',l:'Прокладка кабеля, м'},
     {k:'w_gofra',l:'Прокладка в гофре, м'},{k:'w_lotok',l:'Прокладка в лотке, м'},
@@ -2143,6 +2227,30 @@ function rSet(){
       inB=true;return;
     }
     const unit=f.unit||'₽';
+    // Маркер кастомных точек
+    if(f._cpts){
+      (GLOBAL.custom_pts||[]).forEach((cp,i)=>{
+        h+=`<div class="sf-row" style="flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:6px;width:100%">
+            <span style="font-size:14px">${cp.ico||'🔌'}</span>
+            <input style="flex:1;min-width:60px;background:transparent;border:none;border-bottom:1px solid transparent;font-size:12px;color:var(--t1);outline:none;padding:2px 0"
+              value="${escHtml(cp.lbl)}"
+              oninput="updCptLbl(${i},this.value)"
+              onfocus="this.style.borderBottomColor='var(--acc)'"
+              onblur="this.style.borderBottomColor='transparent'">
+            <input type="number" class="sf-inp" value="${cp.price||0}" min="0" step="any"
+              oninput="updCptPrice(${i},parseFloat(this.value)||0)">
+            <span style="font-size:11px;color:var(--t3)">₽</span>
+            <button onclick="editCustomPt(${i})" style="background:var(--bg3);border:1px solid var(--bdr);border-radius:6px;padding:3px 7px;font-size:12px;cursor:pointer">✎</button>
+            <button onclick="delCustomPt(${i})" style="background:var(--rd-l,#fef2f2);border:1px solid #fca5a5;border-radius:6px;padding:3px 7px;font-size:12px;color:#ef4444;cursor:pointer">✕</button>
+          </div>
+        </div>`;
+      });
+      h+=`</div><div style="margin-top:4px"><button class="btn" style="width:100%" onclick="openCustomPtEditor(-1)">+ Добавить свою точку</button></div>`;
+      h+=secHdr('Общие расценки (₽/м или ₽/шт)')+`<div class="mblk">`;
+      // Шаблоны доп.работ
+      return;
+    }
     const val=pr[f.k]!=null?pr[f.k]:0;
     // Читаем пользовательское название если есть
     const customLbl=(pr.labels||{})[f.k]||f.l;
@@ -2161,31 +2269,31 @@ function rSet(){
       ${f.hint?`<div style="width:100%;font-size:10px;color:var(--t3);padding:0 0 4px;line-height:1.5">${f.hint}</div>`:''}
     </div>`;
   });
-  // Кастомные точки — прямо в списке Монтаж точек
-  if((pr.custom_pts||[]).length){
-    (pr.custom_pts||[]).forEach((cp,i)=>{
-      h+=`<div class="sf-row" style="flex-wrap:wrap">
-        <div style="display:flex;align-items:center;gap:6px;width:100%">
-          <span style="font-size:14px">${cp.ico||'🔌'}</span>
-          <input style="flex:1;min-width:60px;background:transparent;border:none;border-bottom:1px solid transparent;font-size:12px;color:var(--t1);outline:none;padding:2px 0"
-            value="${escHtml(cp.lbl)}"
-            oninput="updCptLbl(${i},this.value)"
-            onfocus="this.style.borderBottomColor='var(--acc)'"
-            onblur="this.style.borderBottomColor='transparent'">
-          <input type="number" class="sf-inp" value="${cp.price||0}" min="0" step="any"
-            oninput="updCptPrice(${i},parseFloat(this.value)||0)">
-          <span style="font-size:11px;color:var(--t3)">₽</span>
-          <button onclick="editCustomPt(${i})" style="background:var(--bg3);border:1px solid var(--bdr);border-radius:6px;padding:3px 7px;font-size:12px;cursor:pointer">✎</button>
-          <button onclick="delCustomPt(${i})" style="background:var(--rd-l,#fef2f2);border:1px solid #fca5a5;border-radius:6px;padding:3px 7px;font-size:12px;color:#ef4444;cursor:pointer">✕</button>
-        </div>
-      </div>`;
-    });
-  }
-  h+=`</div><div style="margin-top:4px"><button class="btn" style="width:100%" onclick="openCustomPtEditor(-1)">+ Добавить свою точку</button></div>`;
-  if(inB)inB=false; // уже закрыт выше через добавление кнопки
+  if(inB)h+='</div>';
 
-
-  // Сохранить / Сброс
+  // Шаблоны доп. работ — глобальные заготовки
+  h+=secHdr('Шаблоны доп. работ');
+  h+=`<div style="font-size:11px;color:var(--t3);margin-bottom:8px;line-height:1.5">
+    Сверление стен, демонтаж, вывоз мусора и т.д. Создай шаблон — в параметрах объекта нажми «+ из шаблона» чтобы добавить к конкретному заказу.
+  </div>`;
+  h+=`<div class="mblk">`;
+  (GLOBAL.work_templates||[]).forEach((wt,i)=>{
+    h+=`<div class="sf-row" style="flex-wrap:wrap;gap:4px;padding:8px 12px">
+      <input style="flex:2;min-width:90px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;outline:none"
+        value="${escHtml(wt.lbl)}" placeholder="Название работы"
+        oninput="updWT(${i},'lbl',this.value)">
+      <input type="number" style="width:70px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;text-align:right;outline:none"
+        value="${wt.price}" placeholder="Цена" oninput="updWT(${i},'price',parseFloat(this.value)||0)">
+      <select style="width:46px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 5px;font-size:11px;outline:none"
+        onchange="updWT(${i},'unit',this.value)">
+        <option value="шт" ${wt.unit==='шт'?'selected':''}>шт</option>
+        <option value="м" ${wt.unit==='м'?'selected':''}>м</option>
+        <option value="кв.м" ${wt.unit==='кв.м'?'selected':''}>м²</option>
+      </select>
+      <button onclick="delWT(${i})" style="background:var(--rd-l);border:none;border-radius:6px;padding:4px 8px;color:var(--rd);cursor:pointer;font-size:11px">✕</button>
+    </div>`;
+  });
+  h+=`</div><div style="margin-top:4px"><button class="btn" style="width:100%" onclick="addWT()">+ Добавить шаблон работы</button></div>`;
   h+=`<div style="padding:14px 0 0;display:flex;gap:10px">
     <button class="btn btn-p" style="flex:1" onclick="saveSet()">Сохранить</button>
     <button class="btn btn-d" onclick="resetSet()">Сброс цен</button>
@@ -2447,10 +2555,28 @@ function delBrandExtra(bk,i){
   if(PR_MAP[CUR]?.brand_extra?.[bk])PR_MAP[CUR].brand_extra[bk].splice(i,1);
   save();openBrandEditor(bk);
 }
-function updCW(i,k,val){
+function addWT(){
+  if(!GLOBAL.work_templates)GLOBAL.work_templates=[];
+  GLOBAL.work_templates.push({lbl:'',price:0,unit:'шт'});
+  save();rSet();
+}
+function updWT(i,k,val){
+  if(!GLOBAL.work_templates?.[i])return;
+  GLOBAL.work_templates[i][k]=val;save();
+}
+function delWT(i){
+  if(!GLOBAL.work_templates)return;
+  GLOBAL.work_templates.splice(i,1);save();rSet();
+}
+function addWTToObj(i){
+  const wt=(GLOBAL.work_templates||[])[i];
+  if(!wt)return;
   if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_CLIENT};
   if(!PR_MAP[CUR].custom_works)PR_MAP[CUR].custom_works=[];
-  PR_MAP[CUR].custom_works[i][k]=val;save();
+  PR_MAP[CUR].custom_works.push({lbl:wt.lbl,price:wt.price,qty:1,unit:wt.unit});
+  save();openObjSettings();
+}
+function updCW(i,k,val){
 }
 function delCW(i){
   if(PR_MAP[CUR]?.custom_works)PR_MAP[CUR].custom_works.splice(i,1);
