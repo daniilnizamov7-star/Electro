@@ -381,14 +381,14 @@ function autoProtForGrp(grpKey, roomType){
 
 const BEND=0.6, RAZD=0.8, ZAP=1.15;
 
-// Мощный потребитель — один прямой кабель
+// Мощный потребитель — прямой кабель от щитка до прибора (без распредкоробки)
+// innerDist = расстояние от щитка до прибора напрямую
 // Возвращает {total, horiz, vert}
 function calcLenPwr(r, innerDist, ptH){
-  const щD=parseFloat(r.dist)||10;
   const roomH=parseFloat(r.h)||2.7;
   const hM=Math.min((ptH!=null?parseFloat(ptH):200)/1000, roomH);
   const drop=Math.max(0, roomH-hM);
-  const horiz=щD+(parseFloat(innerDist)||0);
+  const horiz=parseFloat(innerDist)||0; // только до прибора, щD не добавляем
   const vert=drop;
   const total=Math.ceil((horiz+vert+BEND+RAZD)*ZAP);
   return {total, horiz:Math.ceil(horiz*ZAP), vert:Math.ceil((vert+BEND+RAZD)*ZAP)};
@@ -1128,7 +1128,7 @@ function rPtsList(){
           <div>${pt.lbl}</div>
           <div class="ptcb">ВВГнг ${pt.cable} · h=${pt.hStd}мм${pt.needUzo?' · УЗО авто':''}</div>
           ${q>0?`<div style="margin-top:5px;display:flex;align-items:center;gap:5px">
-            <span style="font-size:10px;color:var(--t3)">До прибора от коробки, м:</span>
+            <span style="font-size:10px;color:var(--t3)">От щитка до прибора, м:</span>
             <input type="number" id="dist_${grpKey}"
               style="width:58px;background:var(--bg3);border:1.5px solid var(--bdr);border-radius:6px;padding:3px 6px;font-size:12px;outline:none;text-align:center"
               placeholder="0" value="${distVal}" min="0" step="0.5"
@@ -1326,8 +1326,8 @@ function openLD(gi){
   // Строим объяснение под тип линии
   let explanation='';
   if(l._isPwr){
-    explanation=`${r.dist||10}м (щиток→прибор)${mD>0?` + ${mD}м (до прибора)`:''}
-    + ${drop.toFixed(1)}м (спуск до прибора h=${ptHStd}мм)
+    explanation=`${mD>0?mD:r.dist||10}м (щиток→прибор напрямую)
+    + ${drop.toFixed(1)}м (спуск h=${ptHStd}мм)
     + 0.6м (изгибы) + 0.8м (разделка) × 1.15`;
   } else if(l._isLight){
     const n=l.qty||1;
