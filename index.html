@@ -220,7 +220,7 @@ const PT_BASE=[
   {id:'lstr',lbl:'Люстра/подвесной',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:0},
   {id:'led',lbl:'Светодиодная лента',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:0},
   {id:'trak',lbl:'Трековые споты',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:0},
-  {id:'pwr_var',lbl:'Варочная панель',ico:'🔥',cable:'3x6',grp:'pwr',boxes:0,hStd:50,pwr:7.0,need380:true},
+  {id:'pwr_var',lbl:'Варочная панель',ico:'🔥',cable:'3x6',grp:'pwr',boxes:0,hStd:50,pwr:7.0},
   {id:'pwr_duh',lbl:'Духовой шкаф',ico:'🔥',cable:'3x4',grp:'pwr',boxes:0,hStd:700,pwr:3.5},
   {id:'pwr_boj',lbl:'Водонагреватель',ico:'💧',cable:'3x2.5',grp:'pwr',boxes:0,hStd:1800,pwr:2.0,needUzo:true},
   {id:'pwr_stir',lbl:'Стиральная машина',ico:'🌀',cable:'3x2.5',grp:'pwr',boxes:0,hStd:900,pwr:2.5,needUzo:true},
@@ -548,8 +548,7 @@ function getPueWarns(){
     // Балкон/улица
     if((r.type==='balcony'||r.type==='outdoor')&&((pts.roz1||0)+(pts.roz2||0))>0)
       errors.push(`${r.name}: на балконе/улице розетки минимум IP44 (ПУЭ 7.1.50)`);
-    // Варочная — 380В обязательно
-    if(pts.pwr_var)errors.push(`${r.name}: варочная панель работает ТОЛЬКО от 380В — нужен 3-фазный ввод и кабель 3×6мм² (ПУЭ)`)
+    // Варочная — однофазная 220В, кабель 3×6
   });
   // Ручно убранное обязательное УЗО
   getAllLines().forEach(l=>{
@@ -932,7 +931,7 @@ function openLD(gi){
   const nuances=[];const k=l.grp;
   if(k.includes('pwr_kond'))nuances.push('Кондиционер: розетка для внутреннего блока. Наружный блок — отдельная линия по кабелю 3×2.5');
   if(k.includes('pwr_tp'))nuances.push('Тёплый пол: терморегулятор на стене 900мм. Датчик температуры — в гофре в стяжке');
-  if(k.includes('pwr_var'))nuances.push('Варочная 380В: кабель 3×6, автомат 32А, УЗО 30мА. CEE разъём или клеммная колодка');
+  if(k.includes('pwr_var'))nuances.push('Варочная панель: кабель 3×6, автомат 32А, УЗО 30мА. Клеммная колодка или вилка 32А');
   if(k.includes('pwr_boj'))nuances.push('Бойлер: розетка IP44. В ванной — УЗО 10мА, запас кабеля 40см');
   if(k==='light'||k.includes('led'))nuances.push('LED-лента: нужен блок питания 12В или 24В. Мощность БП = длина × Вт/м × 1.2');
 
@@ -1382,7 +1381,7 @@ function rCalc(){
       <div class="mr"><span class="mn">Розетки, вентиляторы</span><span class="mp">2.5 мм²</span></div>
       <div class="mr"><span class="mn">Бойлер, стиралка, ПММ</span><span class="mp">2.5 мм²</span></div>
       <div class="mr"><span class="mn">Духовой шкаф (до 3.5 кВт)</span><span class="mp">4 мм²</span></div>
-      <div class="mr"><span class="mn">Варочная панель 380В</span><span class="mp">6 мм²</span></div>
+      <div class="mr"><span class="mn">Варочная панель (220В, до 7 кВт)</span><span class="mp">6 мм²</span></div>
       <div class="mr"><span class="mn">Ввод до 15 кВт</span><span class="mp">10 мм²</span></div>
       <div class="mr"><span class="mn">Ввод до 22 кВт</span><span class="mp">16 мм²</span></div>
     </div>`;
