@@ -213,13 +213,13 @@ const PT_BASE=[
   {id:'rozIP',lbl:'Розетка IP44',ico:'🔌',cable:'3x2.5',grp:'rozIP',boxes:1,hStd:200,needUzo:true},
   {id:'rozUSB',lbl:'Розетка USB/TypeC',ico:'🔌',cable:'3x2.5',grp:'roz',boxes:1,hStd:200},
   {id:'rozTV',lbl:'ТВ/LAN розетка',ico:'📺',cable:'3x1.5',grp:'roz',boxes:1,hStd:200},
-  {id:'vkl1',lbl:'Выключатель 1-кл.',ico:'💡',cable:'2x1.5',grp:'light',boxes:1,hStd:900},
-  {id:'vkl2',lbl:'Выключатель 2-кл.',ico:'💡',cable:'2x1.5',grp:'light',boxes:1,hStd:900},
-  {id:'vklpr',lbl:'Выключатель проходной',ico:'💡',cable:'3x1.5',grp:'light',boxes:1,hStd:900},
-  {id:'spot',lbl:'Светильник встроенный',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:0},
-  {id:'lstr',lbl:'Люстра/подвесной',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:0},
-  {id:'led',lbl:'Светодиодная лента',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:0},
-  {id:'trak',lbl:'Трековые споты',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:0},
+  {id:'vkl1',lbl:'Выключатель 1-кл.',ico:'💡',cable:'2x1.5',grp:'light',boxes:1,hStd:900,lightSub:'main'},
+  {id:'vkl2',lbl:'Выключатель 2-кл.',ico:'💡',cable:'2x1.5',grp:'light',boxes:1,hStd:900,lightSub:'main'},
+  {id:'vklpr',lbl:'Выключатель проходной',ico:'💡',cable:'3x1.5',grp:'light',boxes:1,hStd:900,lightSub:'main'},
+  {id:'spot',lbl:'Светильник встроенный',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:0,lightSub:'spot'},
+  {id:'lstr',lbl:'Люстра/подвесной',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:0,lightSub:'main'},
+  {id:'trak',lbl:'Трековые споты',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:0,lightSub:'spot'},
+  {id:'led',lbl:'LED-лента (до БП)',ico:'💡',cable:'3x1.5',grp:'pwr',boxes:0,hStd:2400,pwr:0.2,isLed:true},
   {id:'pwr_var',lbl:'Варочная панель',ico:'🔥',cable:'3x6',grp:'pwr',boxes:0,hStd:50,pwr:7.0},
   {id:'pwr_duh',lbl:'Духовой шкаф',ico:'🔥',cable:'3x4',grp:'pwr',boxes:0,hStd:700,pwr:3.5},
   {id:'pwr_boj',lbl:'Водонагреватель',ico:'💧',cable:'3x2.5',grp:'pwr',boxes:0,hStd:1800,pwr:2.0,needUzo:true},
@@ -229,11 +229,11 @@ const PT_BASE=[
   {id:'pwr_tp',lbl:'Тёплый пол',ico:'🌡',cable:'3x2.5',grp:'pwr',boxes:0,hStd:900,pwr:2.0,needUzo:true},
   {id:'pwr_holod',lbl:'Холодильник',ico:'🧊',cable:'3x1.5',grp:'roz',boxes:1,hStd:50},
   {id:'pwr_ps',lbl:'Полотенцесушитель эл.',ico:'🔆',cable:'3x2.5',grp:'pwr',boxes:0,hStd:1000,pwr:0.8,needUzo:true},
-  {id:'pwr_vent',lbl:'Вентилятор принудит.',ico:'💨',cable:'2x1.5',grp:'light',boxes:0,hStd:2400},
+  {id:'pwr_vent',lbl:'Вентилятор принудит.',ico:'💨',cable:'2x1.5',grp:'light',boxes:0,hStd:2400,lightSub:'main'},
   {id:'pwr_vyth',lbl:'Вытяжка кухонная',ico:'💨',cable:'3x1.5',grp:'roz',boxes:1,hStd:2200},
   // Накладные (без подрозетника, без штробы)
   {id:'roz1n',lbl:'Розетка накладная',ico:'🔌',cable:'3x2.5',grp:'roz',boxes:0,hStd:200,surface:true},
-  {id:'vkl1n',lbl:'Выключатель накладной',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:900,surface:true},
+  {id:'vkl1n',lbl:'Выключатель накладной',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:900,surface:true,lightSub:'main'},
   {id:'rozIPn',lbl:'Розетка IP44 накладная',ico:'🔌',cable:'3x2.5',grp:'rozIP',boxes:0,hStd:200,needUzo:true,surface:true},
 ];
 // Возвращает встроенные точки + пользовательские из настроек
@@ -262,7 +262,7 @@ const PT=new Proxy([],{
     return t[prop];
   }
 });
-const GRPLBL={roz:'Розетки',rozIP:'Розетки влажные',light:'Освещение',pwr:'Мощные (отд.линия)',roz_s:'Розетки накладные',rozIP_s:'Розетки IP44 накладные',light_s:'Выключатели накладные'};
+const GRPLBL={roz:'Розетки',rozIP:'Розетки влажные',light:'Освещение',light_spot:'Споты/трек',light_main:'Люстра/осн.',pwr:'Мощные (отд.линия)',roz_s:'Розетки накладные',rozIP_s:'Розетки IP44 накладные',light_s:'Выключатели накладные'};
 const PUE_MAX_ROZ=8, PUE_MAX_LIGHT=25;
 const CABLE_I={'2x1.5':{sk:15,op:19},'3x1.5':{sk:15,op:19},'3x2.5':{sk:21,op:27},'3x4':{sk:27,op:35},'3x6':{sk:34,op:42},'3x10':{sk:50,op:60}};
 const STD_AUTO=[6,10,16,20,25,32,40,50,63];
@@ -349,7 +349,7 @@ function autoProtForGrp(grpKey, roomType){
   const isBath=roomType==='bath';
   if(grpKey==='roz')   return{type:'auto',nom:16,ma:null};
   if(grpKey==='rozIP') return{type:'dif',nom:16,ma:isBath?10:30};
-  if(grpKey==='light') return{type:'auto',nom:10,ma:null};
+  if(grpKey==='light'||grpKey==='light_spot'||grpKey==='light_main') return{type:'auto',nom:10,ma:null};
   // pwr — grpKey это ptId напрямую: 'pwr_boj', 'pwr_kond' и т.д.
   const pt=PT.find(p=>p.id===grpKey);
   if(!pt) return{type:'auto',nom:16,ma:null};
@@ -439,7 +439,7 @@ function calcRoomLines(r){
   Object.entries(r.pts||{}).forEach(([ptId,qty])=>{
     if(!qty)return;
     const pt=PT.find(p=>p.id===ptId);if(!pt)return;
-    const grpKey=pt.grp==='pwr'?ptId:(pt.surface?pt.grp+'_s':pt.grp);
+    const grpKey=pt.grp==='pwr'?ptId:(pt.surface?pt.grp+'_s':(pt.grp==='light'&&pt.lightSub?'light_'+pt.lightSub:pt.grp));
     if(!byGrp[grpKey])byGrp[grpKey]={qtys:[],cable:'2x1.5',boxes:0,ptId,pt};
     const bg=byGrp[grpKey];
     bg.qtys.push({ptId,qty});
@@ -456,7 +456,7 @@ function calcRoomLines(r){
     const isPwr=bg.pt?.grp==='pwr';
     const isSurface=grpKey.endsWith('_s');
     const baseGrp=isSurface?grpKey.slice(0,-2):grpKey;
-    const isLight=baseGrp==='light';
+    const isLight=baseGrp==='light'||baseGrp==='light_spot'||baseGrp==='light_main';
     const maxPerLine=isLight?PUE_MAX_LIGHT:(baseGrp==='roz'||baseGrp==='rozIP'?PUE_MAX_ROZ:999);
     const numLines=Math.ceil(totalQty/maxPerLine);
     const maxDist=parseFloat(ptDists[grpKey])||0;
@@ -851,10 +851,15 @@ function rPtsList(){
   // ВАЖНО: curPtDists НЕ сбрасывается здесь.
   // Инициализируется один раз в openRF, обновляется через chQD перед перерисовкой.
 
-  // Собираем точки по группам
-  const byGrp={roz:[],rozIP:[],light:[],pwr:{}};
+  // Собираем точки по группам — свет делим на подгруппы
+  const byGrp={roz:[],rozIP:[],light_spot:[],light_main:[],pwr:{}};
   getPT().forEach(pt=>{
     if(pt.grp==='pwr') byGrp.pwr[pt.id]=pt;
+    else if(pt.grp==='light'){
+      const sub=pt.lightSub||'main';
+      if(!byGrp['light_'+sub])byGrp['light_'+sub]=[];
+      byGrp['light_'+sub].push(pt);
+    }
     else if(byGrp[pt.grp]) byGrp[pt.grp].push(pt);
   });
 
@@ -921,21 +926,29 @@ function rPtsList(){
     h+=`</div>`;
   });
 
-  // ── ОСВЕЩЕНИЕ (одна группа — одно расстояние) ──
-  const lightPts=byGrp.light||[];
-  if(lightPts.length){
-    const distVal=curPtDists['light']>0?curPtDists['light']:'';
-    h+=`<div class="slabel" style="margin-top:12px">${GRPLBL_FULL.light}</div>`;
-    h+=`<div style="background:var(--acc-l);border:1.5px solid var(--acc);border-radius:var(--rs);padding:8px 12px;margin-bottom:6px;display:flex;align-items:center;gap:8px">
-      <span style="flex:1;font-size:11px;color:var(--acc);font-weight:500">${DIST_HINT.light}</span>
-      <input type="number" id="dist_light"
-        style="width:70px;background:var(--bg2);border:1.5px solid var(--acc);border-radius:6px;padding:5px 8px;font-size:13px;font-weight:600;text-align:center;outline:none;color:var(--acc)"
-        placeholder="0" value="${distVal}" min="0" step="0.5"
-        oninput="curPtDists['light']=parseFloat(this.value)||0">
-      <span style="font-size:11px;color:var(--acc)">м</span>
-    </div>`;
+  // ── ОСВЕЩЕНИЕ — две подгруппы со своими расстояниями ──
+  [{key:'light_spot',lbl:'💡 Споты и трековые',hint:'До дальнего спота/трека, м'},
+   {key:'light_main',lbl:'💡 Люстра и основной свет',hint:'До люстры/основного светильника, м'}
+  ].forEach(({key,lbl,hint})=>{
+    const pts=byGrp[key]||[];
+    const hasPts=pts.length>0;
+    const hasSelected=pts.some(pt=>(curPts[pt.id]||0)>0);
+    if(!hasPts)return;
+    const distKey=key; // 'light_spot' или 'light_main'
+    const distVal=curPtDists[distKey]>0?curPtDists[distKey]:'';
+    h+=`<div class="slabel" style="margin-top:12px">${lbl}</div>`;
+    if(hasSelected){
+      h+=`<div style="background:var(--acc-l);border:1.5px solid var(--acc);border-radius:var(--rs);padding:8px 12px;margin-bottom:6px;display:flex;align-items:center;gap:8px">
+        <span style="flex:1;font-size:11px;color:var(--acc);font-weight:500">${hint}</span>
+        <input type="number" id="dist_${distKey}"
+          style="width:70px;background:var(--bg2);border:1.5px solid var(--acc);border-radius:6px;padding:5px 8px;font-size:13px;font-weight:600;text-align:center;outline:none;color:var(--acc)"
+          placeholder="0" value="${distVal}" min="0" step="0.5"
+          oninput="curPtDists['${distKey}']=parseFloat(this.value)||0">
+        <span style="font-size:11px;color:var(--acc)">м</span>
+      </div>`;
+    }
     h+=`<div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;box-shadow:var(--shd)">`;
-    lightPts.forEach(pt=>{
+    pts.forEach(pt=>{
       const q=curPts[pt.id]||0;
       h+=`<div class="ptrow" style="padding:9px 0">
         <div class="ptico">${pt.ico}</div>
@@ -944,14 +957,14 @@ function rPtsList(){
           <div class="ptcb">ВВГнг ${pt.cable} · h=${pt.hStd}мм</div>
         </div>
         <div class="qc">
-          <button class="qb" onclick="chQD('${pt.id}','light',-1)" ${q===0?'disabled':''}>−</button>
+          <button class="qb" onclick="chQD('${pt.id}','${distKey}',-1)" ${q===0?'disabled':''}>−</button>
           <span class="qv" id="q_${pt.id}">${q}</span>
-          <button class="qb" onclick="chQD('${pt.id}','light',1)">+</button>
+          <button class="qb" onclick="chQD('${pt.id}','${distKey}',1)">+</button>
         </div>
       </div>`;
     });
     h+=`</div>`;
-  }
+  });
 
   // ── МОЩНЫЕ (каждый прибор — своё расстояние) ──
   const pwrPts=Object.values(byGrp.pwr||{});
@@ -1061,7 +1074,7 @@ function openLD(gi){
   if(k.includes('pwr_tp'))nuances.push('Тёплый пол: терморегулятор на стене 900мм. Датчик температуры — в гофре в стяжке');
   if(k.includes('pwr_var'))nuances.push('Варочная панель: кабель 3×6, автомат 32А, УЗО 30мА. Клеммная колодка или вилка 32А');
   if(k.includes('pwr_boj'))nuances.push('Бойлер: розетка IP44. В ванной — УЗО 10мА, запас кабеля 40см');
-  if(k==='light'||k.includes('led'))nuances.push('LED-лента: нужен блок питания 12В или 24В. Мощность БП = длина × Вт/м × 1.2');
+  if(k==='led')nuances.push('LED-лента: кабель 3×1.5 до блока питания. БП ставится в нише/коробке. От БП до ленты — DC провод 2×0.75 (добавьте в доп. материалы). Мощность БП = длина ленты × Вт/м × 1.2');
 
   let h=`<div class="ld-hero" style="background:${heroColor}"><div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Линия ${gi+1} · ${щ.name}</div><div class="ld-title">${l.label}</div><div class="ld-sub">${rt.ico} ${r.name||l.roomName} · ${l.len}м · ${l.qty} точек</div></div>`;
   h+=`<div class="ld-grid"><div class="ld-c"><div class="ld-cl">Кабель</div><div class="ld-cv">ВВГнг-LS ${l.cable}</div></div><div class="ld-c"><div class="ld-cl">Длина</div><div class="ld-cv">${l.len} м</div></div><div class="ld-c" style="grid-column:1/-1"><div class="ld-cl">Защита ${l.manual_prot?'(ручная)':'(авто)'}</div><div class="ld-cv" style="font-size:13px">${protStr}</div></div></div>`;
