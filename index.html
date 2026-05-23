@@ -179,6 +179,7 @@ html,body{height:100%;background:var(--bg);color:var(--t);font-family:var(--sans
     <div class="scr" id="s-set"><div id="set-c" style="padding:12px"></div></div>
     <div class="scr" id="s-set-brand"><div id="set-brand-c" style="padding:12px"></div></div>
     <div class="scr" id="s-obj-settings"><div id="obj-settings-c" style="padding:12px"></div></div>
+    <div class="scr" id="s-cpt-editor"><div id="cpt-editor-c" style="padding:12px"></div></div>
   </div>
   <nav class="nav">
     <button class="ni on" id="ni-home" onclick="go('home')">
@@ -328,6 +329,24 @@ function load(){
         Object.keys(DP_GLOBAL).forEach(k=>{if(anyPR[k]!=null)GLOBAL[k]=anyPR[k];});
       }
     }
+    // Миграция custom_pts: убрать из PR_MAP всех объектов, оставить только в GLOBAL
+    let needMigrate=false;
+    Object.keys(PR_MAP).forEach(id=>{
+      if(PR_MAP[id]?.custom_pts?.length){
+        // Мёрджим в GLOBAL (не перезаписываем если уже там есть)
+        if(!(GLOBAL.custom_pts||[]).length) GLOBAL.custom_pts=PR_MAP[id].custom_pts;
+        delete PR_MAP[id].custom_pts;
+        needMigrate=true;
+      }
+      // Также чистим глобальные ключи из PR_MAP (оставляем только клиентские)
+      Object.keys(DP_GLOBAL).forEach(k=>{
+        if(k!=='custom_pts'&&PR_MAP[id]?.[k]!=null){
+          if(!g) GLOBAL[k]=PR_MAP[id][k]; // уже перенесли выше
+          delete PR_MAP[id][k];
+        }
+      });
+    });
+    if(needMigrate) save();
     // Миграция из старых версий ev4
     if(!CLIENTS.length){
       const old=localStorage.getItem('ev4');
@@ -2352,16 +2371,8 @@ function openCustomPtEditor(idx){
     </div>
   </div>`;
 
-  // Вставляем форму после кнопки добавления
-  const setEl=document.getElementById('set-c');
-  // Просто перерисовываем rSet с добавленной формой внизу
-  // Проще — добавляем отдельный div
-  const existing=document.getElementById('cpt-editor');
-  if(existing)existing.remove();
-  const div=document.createElement('div');
-  div.id='cpt-editor';div.innerHTML=h;
-  setEl.appendChild(div);
-  div.scrollIntoView({behavior:'smooth',block:'start'});
+  document.getElementById('cpt-editor-c').innerHTML=h;
+  push('s-cpt-editor', idx>=0?'Редактировать точку':'Новая точка');
 }
 
 function selectCptIco(ico){
@@ -2397,7 +2408,7 @@ function saveCustomPt(idx){
   if(!GLOBAL.custom_pts)GLOBAL.custom_pts=[];
   if(idx>=0)GLOBAL.custom_pts[idx]=pt;
   else GLOBAL.custom_pts.push(pt);
-  save();rSet();
+  save();pop();
 }
 
 function editCustomPt(idx){openCustomPtEditor(idx)}
@@ -2416,13 +2427,6 @@ function updCptLbl(idx,val){
   if(!GLOBAL.custom_pts?.[idx])return;
   GLOBAL.custom_pts[idx].lbl=val;save();
 }
-function setLabel(key,val){
-  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_WORK};
-  if(!PR_MAP[CUR].labels)PR_MAP[CUR].labels={};
-  PR_MAP[CUR].labels[key]=val;
-  save();
-}
-
 // ══ ВСПОМОГАТЕЛЬНЫЕ ДЛЯ BRAND EXTRA И CUSTOM WORKS ══
 function updBrandExtra(bk,i,k,v){
   if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_WORK};
