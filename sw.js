@@ -1,4 +1,4 @@
-const CACHE = 'elektro-v20';
+const CACHE = 'elektro-v21';
 const ASSETS = ['/', '/index.html', '/manifest.json'];
 
 self.addEventListener('install', e => {
