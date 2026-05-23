@@ -231,6 +231,10 @@ const PT_BASE=[
   {id:'pwr_ps',lbl:'Полотенцесушитель эл.',ico:'🔆',cable:'3x2.5',grp:'pwr',boxes:0,hStd:1000,pwr:0.8,needUzo:true},
   {id:'pwr_vent',lbl:'Вентилятор принудит.',ico:'💨',cable:'2x1.5',grp:'light',boxes:0,hStd:2400},
   {id:'pwr_vyth',lbl:'Вытяжка кухонная',ico:'💨',cable:'3x1.5',grp:'roz',boxes:1,hStd:2200},
+  // Накладные (без подрозетника, без штробы)
+  {id:'roz1n',lbl:'Розетка накладная',ico:'🔌',cable:'3x2.5',grp:'roz',boxes:0,hStd:200,surface:true},
+  {id:'vkl1n',lbl:'Выключатель накладной',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:900,surface:true},
+  {id:'rozIPn',lbl:'Розетка IP44 накладная',ico:'🔌',cable:'3x2.5',grp:'rozIP',boxes:0,hStd:200,needUzo:true,surface:true},
 ];
 // Возвращает встроенные точки + пользовательские из настроек
 function getPT(){
@@ -258,7 +262,7 @@ const PT=new Proxy([],{
     return t[prop];
   }
 });
-const GRPLBL={roz:'Розетки',rozIP:'Розетки влажные',light:'Освещение',pwr:'Мощные (отд.линия)'};
+const GRPLBL={roz:'Розетки',rozIP:'Розетки влажные',light:'Освещение',pwr:'Мощные (отд.линия)',roz_s:'Розетки накладные',rozIP_s:'Розетки IP44 накладные',light_s:'Выключатели накладные'};
 const PUE_MAX_ROZ=8, PUE_MAX_LIGHT=25;
 const CABLE_I={'2x1.5':{sk:15,op:19},'3x1.5':{sk:15,op:19},'3x2.5':{sk:21,op:27},'3x4':{sk:27,op:35},'3x6':{sk:34,op:42},'3x10':{sk:50,op:60}};
 const STD_AUTO=[6,10,16,20,25,32,40,50,63];
@@ -285,10 +289,12 @@ function щP(slots){const b=B();return slots<=12?b.щ12:slots<=24?b.щ24:slots<=
 let CLIENTS=[], PR_MAP={}, CUR=null;
 const DP_WORK={brand:'IEK',phase:1,relay:false,obj_name:'',
   w_roz1:250,w_roz2:300,w_rozIP:400,w_rozUSB:250,w_rozTV:200,
+  w_roz1n:150,w_vkl1n:120,w_rozIPn:200,
   w_vkl1:200,w_vkl2:250,w_vklpr:350,w_spot:200,w_lstr:250,w_led:350,w_trak:300,
   w_pwr_var:1000,w_pwr_duh:700,w_pwr_boj:600,w_pwr_stir:600,w_pwr_pmm:600,
   w_pwr_kond:700,w_pwr_tp:800,w_pwr_holod:200,w_pwr_ps:600,w_pwr_vent:250,w_pwr_vyth:200,
-  w_stroba:120,w_cable:50,w_podroz:100,w_щиток:2000,rashodni_pct:7,custom_mats:[]};
+  w_stroba:120,w_cable:50,w_gofra:40,w_lotok:30,w_podroz:100,w_щиток:2000,rashodni_pct:7,w_surface_pct:60,custom_mats:[]};
+
 
 function save(){try{localStorage.setItem('ec9_c',JSON.stringify(CLIENTS));localStorage.setItem('ec9_p',JSON.stringify(PR_MAP));localStorage.setItem('ec9_cur',CUR||'')}catch(e){}}
 function load(){
@@ -432,7 +438,7 @@ function calcRoomLines(r){
   Object.entries(r.pts||{}).forEach(([ptId,qty])=>{
     if(!qty)return;
     const pt=PT.find(p=>p.id===ptId);if(!pt)return;
-    const grpKey=pt.grp==='pwr'?ptId:pt.grp;
+    const grpKey=pt.grp==='pwr'?ptId:(pt.surface?pt.grp+'_s':pt.grp);
     if(!byGrp[grpKey])byGrp[grpKey]={qtys:[],cable:'2x1.5',boxes:0,ptId,pt};
     const bg=byGrp[grpKey];
     bg.qtys.push({ptId,qty});
@@ -447,8 +453,10 @@ function calcRoomLines(r){
   Object.entries(byGrp).forEach(([grpKey,bg])=>{
     const totalQty=bg.qtys.reduce((s,x)=>s+x.qty,0);
     const isPwr=bg.pt?.grp==='pwr';
-    const isLight=grpKey==='light';
-    const maxPerLine=isLight?PUE_MAX_LIGHT:(grpKey==='roz'||grpKey==='rozIP'?PUE_MAX_ROZ:999);
+    const isSurface=grpKey.endsWith('_s');
+    const baseGrp=isSurface?grpKey.slice(0,-2):grpKey;
+    const isLight=baseGrp==='light';
+    const maxPerLine=isLight?PUE_MAX_LIGHT:(baseGrp==='roz'||baseGrp==='rozIP'?PUE_MAX_ROZ:999);
     const numLines=Math.ceil(totalQty/maxPerLine);
     const maxDist=parseFloat(ptDists[grpKey])||0;
 
@@ -509,21 +517,22 @@ function calcRoomLines(r){
       if(wp==null){const cpt=(PR().custom_pts||[]).find(p=>p.id===x.ptId);wp=cpt?.price||0;}
       return s+wp*x.qty;
     },0);
+    // Накладные точки — своя цена уже в w_roz1n и т.д., surfaceMult не нужен
+    const surfaceMult=1;
 
     for(let li=0;li<numLines;li++){
       const qThis=li<numLines-1?maxPerLine:totalQty-li*maxPerLine;
       if(qThis<=0)break;
-      const lbl=numLines>1?`${r.name} — ${grpLbl(grpKey)} (${li+1}/${numLines})`:`${r.name} — ${grpLbl(grpKey)}`;
+      const lbl=numLines>1?`${r.name} — ${grpLbl(baseGrp)} (${li+1}/${numLines})`:`${r.name} — ${grpLbl(baseGrp)}`;
       const overKey=grpKey+'_'+li;
       const overr=(r.lineOverrides||{})[overKey];
-      const autoProt=autoProtForGrp(grpKey,roomType);
+      const autoProt=autoProtForGrp(baseGrp,roomType);
       const prot=overr?.prot||autoProt;
       lines.push({
-        label:lbl, cable:bg.cable, len, qty:Math.max(1,qThis),
-        boxes:Math.round(bg.boxes/numLines), work:Math.round(workPerUnit/numLines),
-        roomName:r.name, щитокId:r.щитокId, grp:grpKey, is_pwr:isPwr,
+        label:lbl+(isSurface?' [накл.]':''), cable:bg.cable, len, qty:Math.max(1,qThis),
+        boxes:Math.round(bg.boxes/numLines), work:Math.round(workPerUnit*surfaceMult/numLines),
+        roomName:r.name, щитокId:r.щитокId, grp:grpKey, is_pwr:isPwr, isSurface,
         prot, overrideKey:overKey, manual_prot:!!overr?.prot,
-        // Для расшифровки в деталях линии
         _maxDist:maxDist, _isPwr:isPwr, _isLight:isLight,
       });
     }
@@ -584,10 +593,22 @@ function calcSmeta(){
   const lines=getAllLines();const cl=client();if(!cl)return null;
   const pr=PR();const b=B();
   const cables={};let totalBoxes=0,totalWork=0,totalPoints=0;
-  lines.forEach(l=>{cables[l.cable]=(cables[l.cable]||0)+l.len;totalBoxes+=l.boxes;totalWork+=l.work;totalPoints+=l.qty});
+  lines.forEach(l=>{
+    cables[l.cable]=(cables[l.cable]||0)+l.len;
+    totalWork+=l.work;totalPoints+=l.qty;
+    const r2=(cl?.комнаты||[]).find(c=>c.name===l.roomName);
+    if(!r2?.surface && !l.isSurface) totalBoxes+=l.boxes;
+  });
   const totalCableM=Object.values(cables).reduce((s,v)=>s+v,0);
   const cableCost=Object.entries(cables).reduce((s,[c,m])=>s+m*cPrice(c),0);
-  const gofra=Math.ceil(totalCableM*0.65),gofraCost=gofra*b.gofra16;
+  // Гофра: только для линий где режим 'gofra'
+  let gofraM=0;
+  lines.forEach(l=>{
+    const r2=(cl?.комнаты||[]).find(c=>c.name===l.roomName);
+    if((r2?.cablingMode||'stroba')==='gofra') gofraM+=l.len;
+  });
+  const gofra=Math.ceil(gofraM*0.65);
+  const gofraCost=gofra*b.gofra16;
   const boxCost=totalBoxes*b.podroz;
   const wago=Math.ceil(totalPoints*3),wagoCost=wago*b.wago_3;
   // Защита по типу каждой линии
@@ -607,7 +628,19 @@ function calcSmeta(){
   const rashodniBase=cableCost+gofraCost+boxCost+wagoCost;
   const rashodniCost=rashodniPct>0?Math.round(rashodniBase*rashodniPct/100):0;
   const totalMat=cableCost+gofraCost+boxCost+wagoCost+protCost+щитокCost+vvodCost+relayCost+customMatCost+brandExtraCost+rashodniCost;
-  const wCable=Math.ceil(totalCableM*pr.w_cable),wStroba=Math.ceil(totalCableM*pr.w_stroba);
+  const wCable=Math.ceil(totalCableM*pr.w_cable);
+  // Штробление/гофра/лоток считается по метражу линий каждой комнаты
+  let wStroba=0;
+  const cl2=client();
+  lines.forEach(l=>{
+    const r=(cl2?.комнаты||[]).find(c=>c.name===l.roomName);
+    const cm=r?.cablingMode||'stroba';
+    if(l.isSurface||r?.surface)return; // накладные линии — штробление не считается
+    if(cm==='stroba') wStroba+=l.len*(pr.w_stroba||120);
+    else if(cm==='gofra') wStroba+=l.len*(pr.w_gofra||40);
+    else if(cm==='lotok') wStroba+=l.len*(pr.w_lotok||30);
+  });
+  wStroba=Math.ceil(wStroba);
   const wBoxes=totalBoxes*pr.w_podroz,wЩ=щитки.length*pr.w_щиток;
   const customWorkCost=(pr.custom_works||[]).reduce((s,w)=>s+(w.price||0)*(w.qty||0),0);
   const totalWorkFull=totalWork+wCable+wStroba+wBoxes+wЩ+customWorkCost;
@@ -659,6 +692,8 @@ function openRF(i){
   curPts=i!=null?{...(r.pts||{})}:{};
   curType=r.type||'living';
   curWiringType=r.wiringType||'loop';
+  curCablingMode=r.cablingMode||'stroba';
+  curSurface=r.surface||false;
   // Загружаем сохранённые расстояния — здесь единственное место инициализации
   curPtDists=i!=null?{...(r.ptDists||{})}:{};
   const щSel=(cl.щитки||[]).map((щ,j)=>`<option value="${j}" ${j===(r.щитокId||0)?'selected':''}>${щ.name}</option>`).join('');
@@ -692,11 +727,38 @@ function openRF(i){
       </div>
     </div>
     <div class="slabel">Точки подключения</div>
-    <div id="pts-c"></div>`;
+    <div id="pts-c"></div>
+    <div class="fl" style="margin-top:12px"><label>Способ прокладки</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px" id="cm-grid">
+        ${['stroba','gofra','lotok'].map(cm=>{
+          const sel=curCablingMode===cm;
+          const info={stroba:{ico:'🔨',lbl:'Штроба'},gofra:{ico:'🌀',lbl:'Гофра'},lotok:{ico:'📋',lbl:'Лоток'}}[cm];
+          return `<div id="cm-${cm}" onclick="selCabling('${cm}')"
+            style="border:2px solid ${sel?'var(--acc)':'var(--bdr)'};border-radius:var(--rs);padding:9px 6px;text-align:center;cursor:pointer;background:${sel?'var(--acc-l)':'var(--bg)'}">
+            <div style="font-size:20px">${info.ico}</div>
+            <div style="font-size:10px;font-weight:600;color:${sel?'var(--acc)':'var(--t2)'};margin-top:2px">${info.lbl}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+    <div class="fl"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <input type="checkbox" id="рsurface" ${curSurface?'checked':''} style="width:16px;height:16px" onchange="curSurface=this.checked">
+      <span style="font-size:12px;color:var(--t2)">Накладной монтаж (без штробления и подрозетников)</span>
+    </label></div>`;
   rPtsList();push('s-rf',i!=null?'Изменить комнату':'Новая комната');
 }
 function selType(id){curType=id;document.querySelectorAll('.tc').forEach(el=>el.classList.toggle('sel',el.getAttribute('onclick')===`selType('${id}')`))}
-function selWiring(type){
+function selCabling(cm){
+  curCablingMode=cm;
+  ['stroba','gofra','lotok'].forEach(c=>{
+    const el=document.getElementById('cm-'+c);if(!el)return;
+    const sel=c===cm;
+    el.style.borderColor=sel?'var(--acc)':'var(--bdr)';
+    el.style.background=sel?'var(--acc-l)':'var(--bg)';
+    const lbl=el.querySelector('div:nth-child(2)');
+    if(lbl)lbl.style.color=sel?'var(--acc)':'var(--t2)';
+  });
+}function selWiring(type){
   // Сохраняем dist поля перед перерисовкой
   document.querySelectorAll('input[id^="dist_"]').forEach(inp=>{
     const k=inp.id.replace('dist_','');
@@ -717,6 +779,10 @@ function selWiring(type){
 let curPtDists={};
 // curWiringType: 'loop' = шлейф (коробка в подрозетнике), 'box' = коробка в потолке
 let curWiringType='loop';
+// curCablingMode: 'stroba' | 'gofra' | 'lotok'
+let curCablingMode='stroba';
+// curSurface: true = накладной монтаж (без штроб и подрозетников)
+let curSurface=false;
 
 // Группы точек для форм
 const PT_GRPS=['roz','rozIP','light','pwr'];
@@ -891,7 +957,7 @@ function chQ(id,d){
   document.querySelectorAll('.qb').forEach(b=>{
     if((b.getAttribute('onclick')||'').includes(`'${id}',-1`))b.disabled=curPts[id]===0;
   });
-}function saveRoom(){const cl=client();if(!cl)return;if(!cl.комнаты)cl.комнаты=[];const r={name:v('рн')||'Комната',type:curType,l:parseFloat(v('рl'))||4,w:parseFloat(v('рw'))||3,h:parseFloat(v('рh'))||2.7,floor:v('рэ'),щитокId:parseInt(v('рщ'))||0,dist:parseFloat(v('рд'))||10,pts:{...curPts},ptDists:{...curPtDists},wiringType:curWiringType,lineOverrides:eR!=null?((cl.комнаты[eR]||{}).lineOverrides||{}):{}};if(eR!=null)cl.комнаты[eR]=r;else cl.комнаты.push(r);save();pop();rRooms()}
+}function saveRoom(){const cl=client();if(!cl)return;if(!cl.комнаты)cl.комнаты=[];const r={name:v('рн')||'Комната',type:curType,l:parseFloat(v('рl'))||4,w:parseFloat(v('рw'))||3,h:parseFloat(v('рh'))||2.7,floor:v('рэ'),щитокId:parseInt(v('рщ'))||0,dist:parseFloat(v('рд'))||10,pts:{...curPts},ptDists:{...curPtDists},wiringType:curWiringType,cablingMode:curCablingMode,surface:curSurface,lineOverrides:eR!=null?((cl.комнаты[eR]||{}).lineOverrides||{}):{}};if(eR!=null)cl.комнаты[eR]=r;else cl.комнаты.push(r);save();pop();rRooms()}
 function delR(i){if(!confirm('Удалить?'))return;const cl=client();if(!cl)return;cl.комнаты.splice(i,1);save();rRooms()}
 function openRD(i){
   const cl=client();if(!cl)return;const r=(cl.комнаты||[])[i];if(!r)return;eR=i;
@@ -1108,7 +1174,8 @@ function rSmeta(){
   // Работа
   h+=`<div class="ssec"><div class="ssec-t">Работа</div><div class="mblk">
     <div class="mr"><span class="mn">Монтаж точек (${s.totalPoints} шт)</span><span class="mq"></span><span class="mp">${fmt(s.totalWork)} ₽</span></div>
-    <div class="mr"><span class="mn">Штробление</span><span class="mq">${s.totalCableM} м</span><span class="mp">${fmt(s.wStroba)} ₽</span></div>
+    ${(cl.комнаты||[]).some(r=>r.surface)?`<div class="mr" style="background:var(--bg3)"><span class="mn" style="color:var(--t3);font-size:11px">ℹ️ Накладной монтаж: ${(pr.w_surface_pct||60)}% от встроенного</span></div>`:''}
+    <div class="mr"><span class="mn">Прокладка (штроба/гофра/лоток)</span><span class="mq">${s.totalCableM} м</span><span class="mp">${fmt(s.wStroba)} ₽</span></div>
     <div class="mr"><span class="mn">Прокладка кабеля</span><span class="mq">${s.totalCableM} м</span><span class="mp">${fmt(s.wCable)} ₽</span></div>
     <div class="mr"><span class="mn">Монтаж подрозетников</span><span class="mq">${s.totalBoxes} шт</span><span class="mp">${fmt(s.wBoxes)} ₽</span></div>
     <div class="mr"><span class="mn">Сборка щитков</span><span class="mq">${(cl.щитки||[]).length} шт</span><span class="mp">${fmt(s.wЩ)} ₽</span></div>
@@ -1561,7 +1628,9 @@ function rSet(){
   const WF=[
     {sec:'Монтаж точек (₽/шт)'},
     {k:'w_roz1',l:'Розетка одиночная'},{k:'w_roz2',l:'Розетка двойная'},
-    {k:'w_rozIP',l:'Розетка IP44'},{k:'w_vkl1',l:'Выключатель 1-кл.'},
+    {k:'w_rozIP',l:'Розетка IP44'},{k:'w_rozUSB',l:'Розетка USB/TypeC'},{k:'w_rozTV',l:'ТВ/LAN розетка'},
+    {k:'w_roz1n',l:'Розетка накладная'},{k:'w_vkl1n',l:'Выключатель накладной'},{k:'w_rozIPn',l:'Розетка IP44 накладная'},
+    {k:'w_vkl1',l:'Выключатель 1-кл.'},
     {k:'w_vkl2',l:'Выключатель 2-кл.'},{k:'w_vklpr',l:'Проходной выкл.'},
     {k:'w_spot',l:'Светильник встроен.'},{k:'w_lstr',l:'Люстра'},
     {k:'w_led',l:'LED-лента'},{k:'w_trak',l:'Трековые споты'},
@@ -1572,7 +1641,9 @@ function rSet(){
     ...(pr.custom_pts||[]).map((cp,i)=>({k:`__cpt_${i}`,l:`${cp.ico||'🔌'} ${cp.lbl}`,_cpt:true,_idx:i})),
     {sec:'Общие расценки (₽/м или ₽/шт)'},
     {k:'w_stroba',l:'Штробление, м'},{k:'w_cable',l:'Прокладка кабеля, м'},
+    {k:'w_gofra',l:'Прокладка в гофре, м'},{k:'w_lotok',l:'Прокладка в лотке, м'},
     {k:'w_podroz',l:'Монтаж подрозетника, шт'},{k:'w_щиток',l:'Сборка щитка, шт'},
+    {k:'w_surface_pct',l:'Накладной монтаж — % от встроенного',unit:'%',hint:'Розетки/выключатели без штробы и подрозетника. Обычно 50–70% от обычной цены'},
     {sec:'Расходники'},
     {k:'rashodni_pct',l:'% от стоимости материалов',unit:'%',hint:'Буры, дюбели, хомуты, изолента, алебастр. Рекомендуется 5–10%'},
   ];
