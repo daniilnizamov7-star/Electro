@@ -434,7 +434,81 @@ function calcRoomLines(r){
   const lines=[];
   const roomType=r.type||'living';
 
-  // Группируем точки по grpKey
+  // ── Если есть пользовательские линии — строим из них ──
+  if(r.userLines&&r.userLines.length){
+    r.userLines.forEach(ul=>{
+      if(!ul.pts||!Object.keys(ul.pts).length)return;
+      // Определяем параметры линии по точкам
+      let cable='2x1.5',boxes=0,grpKey=ul.grp||'roz';
+      const qtys=[];
+      const rank={'2x1.5':1,'3x1.5':2,'3x2.5':3,'3x4':4,'3x6':5,'3x10':6};
+      Object.entries(ul.pts).forEach(([ptId,qty])=>{
+        if(!qty)return;
+        const pt=PT.find(p=>p.id===ptId);if(!pt)return;
+        qtys.push({ptId,qty});
+        boxes+=pt.boxes*qty;
+        if((rank[pt.cable]||0)>(rank[cable]||0))cable=pt.cable;
+      });
+      if(!qtys.length)return;
+      const totalQty=qtys.reduce((s,x)=>s+x.qty,0);
+      const pt0=PT.find(p=>p.id===qtys[0].ptId);
+      const isPwr=pt0?.grp==='pwr';
+      const isSurface=!!pt0?.surface;
+      const isLight=grpKey==='light'||grpKey.startsWith('light_');
+      const wiringType=r.wiringType||'loop';
+      const maxDist=parseFloat(ul.dist)||0;
+      // dist от щитка до коробки этой линии
+      const rWithDist=Object.assign({},r,{dist:parseFloat(ul.щDist)||parseFloat(r.dist)||10});
+      let lenObj;
+      if(isPwr){
+        lenObj=calcLenPwr(rWithDist, maxDist, pt0?.hStd);
+      } else if(!isLight&&wiringType==='box'){
+        const ptH=pt0?.hStd??200;
+        const roomH=parseFloat(r.h)||2.7;
+        const hM=Math.min(ptH/1000,roomH);
+        const drop=Math.max(0,roomH-hM);
+        let totalInner=0;
+        qtys.forEach(x=>{
+          for(let bi=0;bi<x.qty;bi++){
+            const d=parseFloat((r.ptDists||{})[`box_${x.ptId}_${bi}`])||0;
+            totalInner+=d+drop+0.3;
+          }
+        });
+        const щD=parseFloat(rWithDist.dist)||10;
+        const len=Math.ceil((щD+totalInner+0.6+0.8)*1.15);
+        const _bH=Math.ceil(щD*1.15);
+        lenObj={total:len,horiz:_bH,vert:Math.max(0,len-_bH)};
+      } else if(isLight){
+        const nLights=qtys.reduce((s,x)=>{const p=PT.find(q=>q.id===x.ptId);return s+(p&&p.hStd===0?x.qty:0);},0);
+        const nSwitches=qtys.reduce((s,x)=>{const p=PT.find(q=>q.id===x.ptId);return s+(p&&p.hStd>0?x.qty:0);},0);
+        const switchH=qtys.reduce((s,x)=>{const p=PT.find(q=>q.id===x.ptId);return p&&p.hStd>0?Math.max(s,p.hStd):s;},900);
+        lenObj=calcLenLight(rWithDist,maxDist,switchH,nLights,nSwitches);
+      } else {
+        lenObj=calcLenRoz(rWithDist,maxDist,pt0?.hStd,totalQty);
+      }
+      const lenObj2=typeof lenObj==='object'?lenObj:{total:lenObj,horiz:Math.ceil(lenObj*0.4),vert:Math.ceil(lenObj*0.6)};
+      const workPerUnit=qtys.reduce((s,x)=>{
+        let wp=PR()['w_'+x.ptId];
+        if(wp==null){const cpt=(PR().custom_pts||[]).find(p=>p.id===x.ptId);wp=cpt?.price||0;}
+        return s+wp*x.qty;
+      },0);
+      const autoProt=autoProtForGrp(isPwr?qtys[0].ptId:grpKey,roomType);
+      const prot=(r.lineOverrides||{})[ul.id]?.prot||autoProt;
+      lines.push({
+        label:`${r.name} — ${ul.name||grpLbl(grpKey)}`,
+        cable, len:lenObj2.total, lenHoriz:lenObj2.horiz, lenVert:lenObj2.vert,
+        qty:totalQty, boxes, work:workPerUnit,
+        roomName:r.name, щитокId:r.щитокId, grp:grpKey,
+        is_pwr:isPwr, isSurface,
+        prot, overrideKey:ul.id, manual_prot:!!(r.lineOverrides||{})[ul.id]?.prot,
+        _maxDist:maxDist, _isPwr:isPwr, _isLight:isLight,
+        _ulId:ul.id,
+      });
+    });
+    return lines;
+  }
+
+  // ── Авто-группировка (нет userLines) ──
   const byGrp={};
   Object.entries(r.pts||{}).forEach(([ptId,qty])=>{
     if(!qty)return;
@@ -714,6 +788,7 @@ function openRF(i){
   curCablingMode=r.cablingMode||'stroba'; // legacy fallback
   curWallMode=r.wallMode||(r.cablingMode||'stroba');
   curCeilingMode=r.ceilingMode||(r.cablingMode==='stroba'?'open':(r.cablingMode||'open'));
+  curUserLines=r.userLines?JSON.parse(JSON.stringify(r.userLines)):null;
   curSurface=r.surface||false;
   // Загружаем сохранённые расстояния — здесь единственное место инициализации
   curPtDists=i!=null?{...(r.ptDists||{})}:{};
@@ -747,7 +822,6 @@ function openRF(i){
         </div>
       </div>
     </div>
-    <div class="slabel">Точки подключения</div>
     <div id="pts-c"></div>
     <div class="fl" style="margin-top:4px"><label>Стены — прокладка</label>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px" id="wm-grid">
@@ -778,7 +852,18 @@ function openRF(i){
     <div class="fl"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
       <input type="checkbox" id="рsurface" ${curSurface?'checked':''} style="width:16px;height:16px" onchange="curSurface=this.checked">
       <span style="font-size:12px;color:var(--t2)">Накладной монтаж (без штробления и подрозетников)</span>
-    </label></div>`;
+    </label></div>
+    <div class="slabel" style="margin-top:12px">Точки подключения</div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button id="btn-auto-lines" onclick="setLinesMode('auto')"
+        style="flex:1;padding:8px;border-radius:var(--rs);border:2px solid ${!curUserLines?'var(--acc)':'var(--bdr)'};background:${!curUserLines?'var(--acc-l)':'var(--bg)'};color:${!curUserLines?'var(--acc)':'var(--t2)'};font-size:12px;font-weight:600;cursor:pointer">
+        ⚡ Авто-линии
+      </button>
+      <button id="btn-manual-lines" onclick="setLinesMode('manual')"
+        style="flex:1;padding:8px;border-radius:var(--rs);border:2px solid ${curUserLines?'var(--acc)':'var(--bdr)'};background:${curUserLines?'var(--acc-l)':'var(--bg)'};color:${curUserLines?'var(--acc)':'var(--t2)'};font-size:12px;font-weight:600;cursor:pointer">
+        ✏️ Свои линии
+      </button>
+    </div>`;
   rPtsList();push('s-rf',i!=null?'Изменить комнату':'Новая комната');
 }
 function selType(id){curType=id;document.querySelectorAll('.tc').forEach(el=>el.classList.toggle('sel',el.getAttribute('onclick')===`selType('${id}')`))}
@@ -830,6 +915,7 @@ let curWiringType='loop';
 let curCablingMode='stroba';
 let curWallMode='stroba';
 let curCeilingMode='open';
+let curUserLines=null; // null = авто-группировка, [] или массив = ручные линии
 // curSurface: true = накладной монтаж (без штроб и подрозетников)
 let curSurface=false;
 
@@ -848,8 +934,69 @@ const DIST_HINT={
 
 function rPtsList(){
   const cl=client();
-  // ВАЖНО: curPtDists НЕ сбрасывается здесь.
-  // Инициализируется один раз в openRF, обновляется через chQD перед перерисовкой.
+
+  // ── РЕЖИМ РУЧНЫХ ЛИНИЙ ──
+  if(curUserLines!==null){
+    let h='';
+    const allPts=getPT();
+    curUserLines.forEach((ul,uIdx)=>{
+      const grpOpts=['roz','rozIP','light_spot','light_main','pwr'].map(g=>
+        `<option value="${g}" ${ul.grp===g?'selected':''}>${GRPLBL[g]||g}</option>`
+      ).join('');
+      h+=`<div style="border:2px solid var(--acc);border-radius:var(--rs);padding:10px;margin-bottom:10px;background:var(--bg2)">
+        <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center">
+          <input value="${ul.name}" placeholder="Название линии"
+            style="flex:1;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:5px 8px;font-size:13px;font-weight:600"
+            oninput="renameUserLine('${ul.id}',this.value)">
+          <select style="background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:5px 4px;font-size:11px"
+            onchange="setULGrp('${ul.id}',this.value)">${grpOpts}</select>
+          <button onclick="delUserLine('${ul.id}')"
+            style="background:var(--rd-l,#fef2f2);border:1px solid #fca5a5;border-radius:6px;padding:4px 8px;font-size:12px;color:#ef4444;cursor:pointer">✕</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+          <div style="display:flex;align-items:center;gap:4px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:5px 8px">
+            <span style="font-size:10px;color:var(--t3);white-space:nowrap">Щит→короб</span>
+            <input type="number" value="${ul.щDist||''}" placeholder="м"
+              style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:600;text-align:right;outline:none"
+              oninput="setULшDist('${ul.id}',this.value)">
+            <span style="font-size:10px;color:var(--t3)">м</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;background:var(--acc-l);border:1.5px solid var(--acc);border-radius:6px;padding:5px 8px">
+            <span style="font-size:10px;color:var(--acc);white-space:nowrap">До точки</span>
+            <input type="number" value="${ul.dist||''}" placeholder="м"
+              style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:600;text-align:right;outline:none;color:var(--acc)"
+              oninput="setULDist('${ul.id}',this.value)">
+            <span style="font-size:10px;color:var(--acc)">м</span>
+          </div>
+        </div>
+        <div style="background:var(--bg);border:1px solid var(--bdr);border-radius:var(--rs);overflow:hidden">`;
+      allPts.filter(pt=>pt.grp!=='pwr'||(ul.grp===pt.id)).forEach(pt=>{
+        const q=ul.pts[pt.id]||0;
+        h+=`<div class="ptrow" style="padding:7px 0">
+          <div class="ptico" style="font-size:16px">${pt.ico}</div>
+          <div class="ptlb" style="flex:1">
+            <div style="font-size:12px">${pt.lbl}</div>
+            <div class="ptcb">${pt.cable} · h=${pt.hStd}мм</div>
+          </div>
+          <div class="qc">
+            <button id="ulqb_${ul.id}_${pt.id}_m" class="qb"
+              onclick="chULQ('${ul.id}','${pt.id}',-1)" ${q===0?'disabled':''}>−</button>
+            <span class="qv" id="ulq_${ul.id}_${pt.id}">${q}</span>
+            <button class="qb" onclick="chULQ('${ul.id}','${pt.id}',1)">+</button>
+          </div>
+        </div>`;
+      });
+      h+=`</div></div>`;
+    });
+    h+=`<button onclick="addUserLine()"
+      style="width:100%;padding:10px;border:2px dashed var(--bdr);border-radius:var(--rs);background:transparent;color:var(--t2);font-size:13px;cursor:pointer;margin-bottom:8px">
+      + Добавить линию
+    </button>`;
+    document.getElementById('pts-c').innerHTML=h;
+    return;
+  }
+
+  // ── РЕЖИМ АВТО-ЛИНИЙ (существующий код) ──
 
   // Собираем точки по группам — свет делим на подгруппы
   const byGrp={roz:[],rozIP:[],light_spot:[],light_main:[],pwr:{}};
@@ -1002,9 +1149,93 @@ function rPtsList(){
   document.getElementById('pts-c').innerHTML=h;
 }
 
+function setLinesMode(mode){
+  if(mode==='manual'&&!curUserLines){
+    // Конвертируем текущие авто-группы в ручные линии
+    curUserLines=buildAutoLines();
+  } else if(mode==='auto'){
+    if(!confirm('Перейти в авто-режим? Ваши линии будут удалены.'))return;
+    // Переносим точки обратно в curPts
+    curPts={};curPtDists={};
+    if(curUserLines){
+      curUserLines.forEach(ul=>{
+        Object.entries(ul.pts||{}).forEach(([k,v])=>curPts[k]=(curPts[k]||0)+v);
+      });
+    }
+    curUserLines=null;
+  }
+  // Обновляем кнопки
+  ['auto','manual'].forEach(m=>{
+    const btn=document.getElementById('btn-'+m+'-lines');
+    if(!btn)return;
+    const sel=(m==='manual')===!!curUserLines;
+    btn.style.borderColor=sel?'var(--acc)':'var(--bdr)';
+    btn.style.background=sel?'var(--acc-l)':'var(--bg)';
+    btn.style.color=sel?'var(--acc)':'var(--t2)';
+  });
+  rPtsList();
+}
+
+function buildAutoLines(){
+  // Строим ручные линии из текущих curPts по авто-логике
+  const grpMap={};
+  Object.entries(curPts).forEach(([ptId,qty])=>{
+    if(!qty)return;
+    const pt=PT.find(p=>p.id===ptId);if(!pt)return;
+    const gk=pt.grp==='pwr'?ptId:(pt.surface?pt.grp+'_s':(pt.grp==='light'&&pt.lightSub?'light_'+pt.lightSub:pt.grp));
+    if(!grpMap[gk])grpMap[gk]={grp:gk,name:grpLbl(gk),dist:parseFloat(curPtDists[gk])||0,щDist:0,pts:{}};
+    grpMap[gk].pts[ptId]=(grpMap[gk].pts[ptId]||0)+qty;
+  });
+  return Object.values(grpMap).map((ul,i)=>Object.assign({id:'ul_'+Date.now()+'_'+i},ul));
+}
+
+function addUserLine(){
+  if(!curUserLines)curUserLines=[];
+  curUserLines.push({id:'ul_'+Date.now(),name:'Новая линия',grp:'roz',dist:0,щDist:0,pts:{}});
+  rPtsList();
+}
+
+function delUserLine(ulId){
+  if(!curUserLines)return;
+  // Возвращаем точки в общий пул (они никуда не деваются, просто удаляем линию)
+  curUserLines=curUserLines.filter(ul=>ul.id!==ulId);
+  rPtsList();
+}
+
+function renameUserLine(ulId,name){
+  const ul=(curUserLines||[]).find(u=>u.id===ulId);
+  if(ul)ul.name=name;
+}
+
+function setULDist(ulId,val){
+  const ul=(curUserLines||[]).find(u=>u.id===ulId);
+  if(ul)ul.dist=parseFloat(val)||0;
+}
+
+function setULшDist(ulId,val){
+  const ul=(curUserLines||[]).find(u=>u.id===ulId);
+  if(ul)ul.щDist=parseFloat(val)||0;
+}
+
+function setULGrp(ulId,grp){
+  const ul=(curUserLines||[]).find(u=>u.id===ulId);
+  if(ul){ul.grp=grp;ul.name=grpLbl(grp);}
+  rPtsList();
+}
+
+function chULQ(ulId,ptId,d){
+  const ul=(curUserLines||[]).find(u=>u.id===ulId);
+  if(!ul)return;
+  ul.pts[ptId]=Math.max(0,(ul.pts[ptId]||0)+d);
+  const el=document.getElementById('ulq_'+ulId+'_'+ptId);
+  if(el)el.textContent=ul.pts[ptId];
+  document.querySelectorAll('[id^="ulqb_"]').forEach(b=>{
+    if((b.getAttribute('onclick')||'').includes(`'${ulId}','${ptId}',-1`))b.disabled=(ul.pts[ptId]||0)===0;
+  });
+}
+
 function chQD(id,grpKey,d){
   // Сохраняем ВСЕ поля расстояний из DOM перед перерисовкой
-  // Используем parseFloat — если пустое поле, сохраняем 0 (не удаляем ключ)
   document.querySelectorAll('input[id^="dist_"]').forEach(inp=>{
     const k=inp.id.replace('dist_','');
     const val=parseFloat(inp.value);
@@ -1019,7 +1250,12 @@ function chQ(id,d){
   document.querySelectorAll('.qb').forEach(b=>{
     if((b.getAttribute('onclick')||'').includes(`'${id}',-1`))b.disabled=curPts[id]===0;
   });
-}function saveRoom(){const cl=client();if(!cl)return;if(!cl.комнаты)cl.комнаты=[];const r={name:v('рн')||'Комната',type:curType,l:parseFloat(v('рl'))||4,w:parseFloat(v('рw'))||3,h:parseFloat(v('рh'))||2.7,floor:v('рэ'),щитокId:parseInt(v('рщ'))||0,dist:parseFloat(v('рд'))||10,pts:{...curPts},ptDists:{...curPtDists},wiringType:curWiringType,wallMode:curWallMode,ceilingMode:curCeilingMode,cablingMode:curWallMode,surface:curSurface,lineOverrides:eR!=null?((cl.комнаты[eR]||{}).lineOverrides||{}):{}};if(eR!=null)cl.комнаты[eR]=r;else cl.комнаты.push(r);save();pop();rRooms()}
+}function saveRoom(){const cl=client();if(!cl)return;if(!cl.комнаты)cl.комнаты=[];
+  let finalPts=curPts,finalPtDists=curPtDists,finalUserLines=curUserLines;
+  if(curUserLines){finalPts={};curUserLines.forEach(ul=>Object.entries(ul.pts||{}).forEach(([k,v])=>{finalPts[k]=(finalPts[k]||0)+v;}));}
+  const r={name:v('рн')||'Комната',type:curType,l:parseFloat(v('рl'))||4,w:parseFloat(v('рw'))||3,h:parseFloat(v('рh'))||2.7,floor:v('рэ'),щитокId:parseInt(v('рщ'))||0,dist:parseFloat(v('рд'))||10,pts:finalPts,ptDists:finalPtDists,userLines:finalUserLines||null,wiringType:curWiringType,wallMode:curWallMode,ceilingMode:curCeilingMode,cablingMode:curWallMode,surface:curSurface,lineOverrides:eR!=null?((cl.комнаты[eR]||{}).lineOverrides||{}):{}};
+  if(eR!=null)cl.комнаты[eR]=r;else cl.комнаты.push(r);save();pop();rRooms()
+}
 function delR(i){if(!confirm('Удалить?'))return;const cl=client();if(!cl)return;cl.комнаты.splice(i,1);save();rRooms()}
 function openRD(i){
   const cl=client();if(!cl)return;const r=(cl.комнаты||[])[i];if(!r)return;eR=i;
