@@ -211,7 +211,7 @@ const RT=[
 ];
 const PT_BASE=[
   {id:'roz1',lbl:'Розетка одиночная',ico:'🔌',cable:'3x2.5',grp:'roz',boxes:1,hStd:200},
-  {id:'roz2',lbl:'Розетка двойная',ico:'🔌',cable:'3x2.5',grp:'roz',boxes:2,hStd:200},
+  {id:'roz2',lbl:'Розетка двойная',ico:'🔌',cable:'3x2.5',grp:'roz',boxes:1,hStd:200},
   {id:'rozIP',lbl:'Розетка IP44',ico:'🔌',cable:'3x2.5',grp:'rozIP',boxes:1,hStd:200,needUzo:true},
   {id:'rozUSB',lbl:'Розетка USB/TypeC',ico:'🔌',cable:'3x2.5',grp:'roz',boxes:1,hStd:200},
   {id:'rozTV',lbl:'ТВ/LAN розетка',ico:'📺',cable:'3x1.5',grp:'roz',boxes:1,hStd:200},
@@ -625,9 +625,13 @@ function calcRoomLines(r){
 
   // ── Авто-группировка (нет userLines) ──
   const byGrp={};
+  const ptOvr=r.ptOverrides||{};
   Object.entries(r.pts||{}).forEach(([ptId,qty])=>{
     if(!qty)return;
-    const pt=PT.find(p=>p.id===ptId);if(!pt)return;
+    const ptBase=PT.find(p=>p.id===ptId);if(!ptBase)return;
+    // Применяем переопределения параметров точки
+    const ov=ptOvr[ptId]||{};
+    const pt={...ptBase, ...(ov.boxes!=null?{boxes:ov.boxes}:{}), ...(ov.hStd!=null?{hStd:ov.hStd}:{}), ...(ov.cable?{cable:ov.cable}:{})};
     const grpKey=pt.grp==='pwr'?ptId:(pt.surface?pt.grp+'_s':(pt.grp==='light'&&pt.lightSub?'light_'+pt.lightSub:pt.grp));
     if(!byGrp[grpKey])byGrp[grpKey]={qtys:[],cable:'2x1.5',boxes:0,ptId,pt};
     const bg=byGrp[grpKey];
@@ -1061,6 +1065,7 @@ function openRF(i){
   curWallMode=r.wallMode||(r.cablingMode||'stroba');
   curCeilingMode=r.ceilingMode||(r.cablingMode==='stroba'?'open':(r.cablingMode||'open'));
   curUserLines=r.userLines?JSON.parse(JSON.stringify(r.userLines)):null;
+  curPtOverrides=r.ptOverrides?JSON.parse(JSON.stringify(r.ptOverrides)):{};
   curSurface=r.surface||false;
   // Загружаем сохранённые расстояния — здесь единственное место инициализации
   curPtDists=i!=null?{...(r.ptDists||{})}:{};
@@ -1187,7 +1192,8 @@ let curWiringType='loop';
 let curCablingMode='stroba';
 let curWallMode='stroba';
 let curCeilingMode='open';
-let curUserLines=null; // null = авто-группировка, [] или массив = ручные линии
+let curUserLines=null;
+let curPtOverrides={}; // {ptId: {boxes, hStd, cable}} — переопределения параметров точек
 // curSurface: true = накладной монтаж (без штроб и подрозетников)
 let curSurface=false;
 
@@ -1332,13 +1338,17 @@ function rPtsList(){
         <div class="ptico">${pt.ico}</div>
         <div class="ptlb" style="flex:1">
           <div>${pt.lbl}</div>
-          <div class="ptcb">ВВГнг ${pt.cable} · h=${pt.hStd}мм${pt.needUzo?' · УЗО авто':''}</div>
+          <div class="ptcb">ВВГнг ${pt.cable} · h=${pt.hStd}мм${pt.needUzo?' · УЗО авто':''}${pt.boxes?` · ${pt.boxes} подроз.`:''}</div>
           ${boxFields}
         </div>
         <div class="qc">
+          <button class="qb qb-sm" onclick="togglePtOvr('${pt.id}')" style="font-size:10px;padding:0 5px;border-radius:5px;opacity:${curPtOverrides[pt.id]?1:0.4}" title="Параметры точки">⚙</button>
           <button class="qb" onclick="chQD('${pt.id}','${grp}',-1)" ${q===0?'disabled':''}>−</button>
           <span class="qv" id="q_${pt.id}">${q}</span>
           <button class="qb" onclick="chQD('${pt.id}','${grp}',1)">+</button>
+        </div>
+        <div id="ptovr_${pt.id}" style="display:${curPtOverrides[pt.id]?'block':'none'};width:100%;padding:6px 0 2px">
+          ${ptOvrPanel(pt)}
         </div>
       </div>`;
     });
@@ -1369,16 +1379,20 @@ function rPtsList(){
     h+=`<div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;box-shadow:var(--shd)">`;
     pts.forEach(pt=>{
       const q=curPts[pt.id]||0;
-      h+=`<div class="ptrow" style="padding:9px 0">
+      h+=`<div class="ptrow" style="padding:9px 0;flex-wrap:wrap">
         <div class="ptico">${pt.ico}</div>
-        <div class="ptlb">
+        <div class="ptlb" style="flex:1">
           <div>${pt.lbl}</div>
-          <div class="ptcb">ВВГнг ${pt.cable} · h=${pt.hStd}мм</div>
+          <div class="ptcb">ВВГнг ${pt.cable} · h=${pt.hStd}мм${pt.boxes?` · ${pt.boxes} подроз.`:''}</div>
         </div>
         <div class="qc">
+          <button class="qb qb-sm" onclick="togglePtOvr('${pt.id}')" style="font-size:10px;padding:0 5px;border-radius:5px;opacity:${curPtOverrides[pt.id]?1:0.4}">⚙</button>
           <button class="qb" onclick="chQD('${pt.id}','${distKey}',-1)" ${q===0?'disabled':''}>−</button>
           <span class="qv" id="q_${pt.id}">${q}</span>
           <button class="qb" onclick="chQD('${pt.id}','${distKey}',1)">+</button>
+        </div>
+        <div id="ptovr_${pt.id}" style="display:${curPtOverrides[pt.id]?'block':'none'};width:100%;padding:6px 0 2px">
+          ${ptOvrPanel(pt)}
         </div>
       </div>`;
     });
@@ -1392,13 +1406,13 @@ function rPtsList(){
     h+=`<div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;box-shadow:var(--shd)">`;
     pwrPts.forEach(pt=>{
       const q=curPts[pt.id]||0;
-      const grpKey=pt.id; // для pwr grpKey = ptId
+      const grpKey=pt.id;
       const distVal=curPtDists[grpKey]>0?curPtDists[grpKey]:'';
       h+=`<div class="ptrow" style="padding:9px 0;flex-wrap:wrap">
         <div class="ptico">${pt.ico}</div>
         <div class="ptlb" style="flex:1">
           <div>${pt.lbl}</div>
-          <div class="ptcb">ВВГнг ${pt.cable} · h=${pt.hStd}мм${pt.needUzo?' · УЗО авто':''}</div>
+          <div class="ptcb">ВВГнг ${pt.cable} · h=${pt.hStd}мм${pt.needUzo?' · УЗО авто':''}${pt.pwr?` · ${pt.pwr}кВт`:''}</div>
           ${q>0?`<div style="margin-top:5px;display:flex;align-items:center;gap:5px">
             <span style="font-size:10px;color:var(--t3)">От щитка до прибора, м:</span>
             <input type="number" id="dist_${grpKey}"
@@ -1409,9 +1423,13 @@ function rPtsList(){
           </div>`:''}
         </div>
         <div class="qc">
+          <button class="qb qb-sm" onclick="togglePtOvr('${pt.id}')" style="font-size:10px;padding:0 5px;border-radius:5px;opacity:${curPtOverrides[pt.id]?1:0.4}">⚙</button>
           <button class="qb" onclick="chQD('${pt.id}','${grpKey}',-1)" ${q===0?'disabled':''}>−</button>
           <span class="qv" id="q_${pt.id}">${q}</span>
           <button class="qb" onclick="chQD('${pt.id}','${grpKey}',1)">+</button>
+        </div>
+        <div id="ptovr_${pt.id}" style="display:${curPtOverrides[pt.id]?'block':'none'};width:100%;padding:6px 0 2px">
+          ${ptOvrPanel(pt)}
         </div>
       </div>`;
     });
@@ -1506,8 +1524,66 @@ function chULQ(ulId,ptId,d){
   });
 }
 
+function ptOvrPanel(pt){
+  const ov=curPtOverrides[pt.id]||{};
+  const boxes=ov.boxes!=null?ov.boxes:pt.boxes;
+  const hStd=ov.hStd!=null?ov.hStd:pt.hStd;
+  const cable=ov.cable||pt.cable;
+  const cables=['2x1.5','3x1.5','3x2.5','3x4','3x6','3x10'];
+  return `<div style="background:var(--acc-l);border:1.5px solid var(--acc);border-radius:8px;padding:8px 10px;display:flex;flex-wrap:wrap;gap:8px;font-size:11px">
+    <div style="display:flex;align-items:center;gap:5px">
+      <span style="color:var(--t3)">Подрозетников:</span>
+      <input type="number" value="${boxes}" min="0" max="10" step="1"
+        style="width:40px;border:1.5px solid var(--bdr);border-radius:5px;padding:2px 5px;font-size:12px;font-weight:600;text-align:center;background:var(--bg);outline:none"
+        oninput="setPtOvr('${pt.id}','boxes',parseInt(this.value)||0)">
+    </div>
+    <div style="display:flex;align-items:center;gap:5px">
+      <span style="color:var(--t3)">Высота мм:</span>
+      <input type="number" value="${hStd}" min="0" max="3000" step="50"
+        style="width:55px;border:1.5px solid var(--bdr);border-radius:5px;padding:2px 5px;font-size:12px;font-weight:600;text-align:center;background:var(--bg);outline:none"
+        oninput="setPtOvr('${pt.id}','hStd',parseInt(this.value)||0)">
+    </div>
+    <div style="display:flex;align-items:center;gap:5px">
+      <span style="color:var(--t3)">Кабель:</span>
+      <select style="border:1.5px solid var(--bdr);border-radius:5px;padding:2px 4px;font-size:11px;background:var(--bg);outline:none"
+        onchange="setPtOvr('${pt.id}','cable',this.value)">
+        ${cables.map(c=>`<option value="${c}" ${cable===c?'selected':''}>${c}</option>`).join('')}
+      </select>
+    </div>
+    <button onclick="clearPtOvr('${pt.id}')"
+      style="background:var(--bg);border:1px solid var(--bdr);border-radius:5px;padding:2px 8px;font-size:10px;cursor:pointer;color:var(--t3)">
+      Сброс
+    </button>
+  </div>`;
+}
+
+function togglePtOvr(ptId){
+  const el=document.getElementById('ptovr_'+ptId);
+  if(!el)return;
+  const vis=el.style.display==='none';
+  el.style.display=vis?'block':'none';
+  // При первом открытии — создаём запись
+  if(vis&&!curPtOverrides[ptId]){
+    const pt=PT.find(p=>p.id===ptId);
+    if(pt)curPtOverrides[ptId]={boxes:pt.boxes,hStd:pt.hStd,cable:pt.cable};
+    el.innerHTML=ptOvrPanel(pt||{id:ptId,boxes:0,hStd:200,cable:'3x2.5'});
+  }
+  // Обновляем прозрачность кнопки
+  const btns=document.querySelectorAll('[onclick="togglePtOvr(\''+ptId+'\')"]');
+  btns.forEach(b=>b.style.opacity=curPtOverrides[ptId]?'1':'0.4');
+}
+
+function setPtOvr(ptId,key,val){
+  if(!curPtOverrides[ptId])curPtOverrides[ptId]={};
+  curPtOverrides[ptId][key]=val;
+}
+
+function clearPtOvr(ptId){
+  delete curPtOverrides[ptId];
+  rPtsList(); // перерисовываем
+}
+
 function chQD(id,grpKey,d){
-  // Сохраняем ВСЕ поля расстояний из DOM перед перерисовкой
   document.querySelectorAll('input[id^="dist_"]').forEach(inp=>{
     const k=inp.id.replace('dist_','');
     const val=parseFloat(inp.value);
@@ -1525,7 +1601,7 @@ function chQ(id,d){
 }function saveRoom(){const cl=client();if(!cl)return;if(!cl.комнаты)cl.комнаты=[];
   let finalPts=curPts,finalPtDists=curPtDists,finalUserLines=curUserLines;
   if(curUserLines){finalPts={};curUserLines.forEach(ul=>Object.entries(ul.pts||{}).forEach(([k,v])=>{finalPts[k]=(finalPts[k]||0)+v;}));}
-  const r={name:v('рн')||'Комната',type:curType,l:parseFloat(v('рl'))||4,w:parseFloat(v('рw'))||3,h:parseFloat(v('рh'))||2.7,floor:v('рэ'),щитокId:parseInt(v('рщ'))||0,dist:parseFloat(v('рд'))||10,pts:finalPts,ptDists:finalPtDists,userLines:finalUserLines||null,wiringType:curWiringType,wallMode:curWallMode,ceilingMode:curCeilingMode,cablingMode:curWallMode,surface:curSurface,lineOverrides:eR!=null?((cl.комнаты[eR]||{}).lineOverrides||{}):{}};
+  const r={name:v('рн')||'Комната',type:curType,l:parseFloat(v('рl'))||4,w:parseFloat(v('рw'))||3,h:parseFloat(v('рh'))||2.7,floor:v('рэ'),щитокId:parseInt(v('рщ'))||0,dist:parseFloat(v('рд'))||10,pts:finalPts,ptDists:finalPtDists,userLines:finalUserLines||null,ptOverrides:Object.keys(curPtOverrides).length?curPtOverrides:undefined,wiringType:curWiringType,wallMode:curWallMode,ceilingMode:curCeilingMode,cablingMode:curWallMode,surface:curSurface,lineOverrides:eR!=null?((cl.комнаты[eR]||{}).lineOverrides||{}):{}};
   if(eR!=null)cl.комнаты[eR]=r;else cl.комнаты.push(r);save();pop();rRooms()
 }
 function delR(i){if(!confirm('Удалить?'))return;const cl=client();if(!cl)return;cl.комнаты.splice(i,1);save();rRooms()}
