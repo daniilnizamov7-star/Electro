@@ -349,7 +349,7 @@ const DP_GLOBAL={brand:'IEK',
   w_vkl1:200,w_vkl2:250,w_vklpr:350,w_spot:200,w_lstr:250,w_led:350,w_trak:300,
   w_pwr_var:1000,w_pwr_duh:700,w_pwr_boj:600,w_pwr_stir:600,w_pwr_pmm:600,
   w_pwr_kond:700,w_pwr_tp:800,w_pwr_holod:200,w_pwr_ps:600,w_pwr_vent:250,w_pwr_vyth:200,
-  w_stroba:120,w_cable:50,w_gofra:40,w_lotok:30,w_podroz:100,w_щиток:2000,
+  w_stroba:120,w_cable:50,w_gofra:40,w_lotok:30,w_podroz:100,w_lunka:150,w_щиток:2000,
   rashodni_pct:7,w_surface_pct:60,labels:{},custom_pts:[]};
 
 // Настройки объекта — специфика конкретного заказчика
@@ -620,10 +620,14 @@ function calcRoomLines(r){
         _ulId:ul.id,
       });
     });
+    // LED выключатель — работает в обоих режимах
+    if(r.ledSwitch&&r.ledSwitch!=='none'&&(r.pts||{}).led){
+      const swId=r.ledSwitch;const swPt=PT.find(p=>p.id===swId);
+      if(swPt){const isSurf=!!swPt.surface;const swLen=calcLenRoz(r,parseFloat((r.ptDists||{}).led)||5,swPt.hStd,1);const swLO=typeof swLen==='object'?swLen:{total:swLen,horiz:Math.ceil(swLen*0.4),vert:Math.ceil(swLen*0.6)};
+        lines.push({label:`${r.name} — Выкл. LED (${swPt.lbl})`,cable:swPt.cable,len:swLO.total,lenHoriz:swLO.horiz,lenVert:swLO.vert,qty:1,boxes:isSurf?0:swPt.boxes,work:PR()['w_'+swId]||PR().w_vkl1||200,roomName:r.name,щитокId:r.щитокId,grp:'light_main',is_pwr:false,isSurface:isSurf,prot:autoProtForGrp('light_main',r.type||'living'),overrideKey:'led_sw',manual_prot:false,_maxDist:0,_isPwr:false,_isLight:true});}
+    }
     return lines;
   }
-
-  // ── Авто-группировка (нет userLines) ──
   const byGrp={};
   const ptOvr=r.ptOverrides||{};
   Object.entries(r.pts||{}).forEach(([ptId,qty])=>{
@@ -738,6 +742,29 @@ function calcRoomLines(r){
       });
     }
   });
+
+  // ── Выключатель для LED-ленты ──
+  if(r.ledSwitch&&r.ledSwitch!=='none'&&(r.pts||{}).led){
+    const swId=r.ledSwitch;
+    const swPt=PT.find(p=>p.id===swId);
+    if(swPt){
+      const isSurf=!!swPt.surface;
+      const swLen=calcLenRoz(r,parseFloat((r.ptDists||{}).led)||5,swPt.hStd,1);
+      const swLenObj=typeof swLen==='object'?swLen:{total:swLen,horiz:Math.ceil(swLen*0.4),vert:Math.ceil(swLen*0.6)};
+      const swWork=PR()['w_'+swId]||PR().w_vkl1||200;
+      lines.push({
+        label:`${r.name} — Выкл. LED (${swPt.lbl})`,
+        cable:swPt.cable,len:swLenObj.total,lenHoriz:swLenObj.horiz,lenVert:swLenObj.vert,
+        qty:1,boxes:isSurf?0:swPt.boxes,work:swWork,
+        roomName:r.name,щитокId:r.щитокId,grp:'light_main',
+        is_pwr:false,isSurface:isSurf,
+        prot:autoProtForGrp('light_main',r.type||'living'),
+        overrideKey:'led_sw',manual_prot:false,
+        _maxDist:0,_isPwr:false,_isLight:true,
+      });
+    }
+  }
+
   return lines;
 }
 
@@ -869,10 +896,12 @@ function calcSmeta(){
     else if(cm==='lotok') wStroba+=lV*(pr.w_lotok||30);
   });
   wStroba=Math.ceil(wStroba);
-  const wBoxes=totalBoxes*pr.w_podroz,wЩ=щитки.length*pr.w_щиток;
+  const wBoxes=totalBoxes*pr.w_podroz;
+  const wLunki=totalBoxes*(pr.w_lunka||150); // сверление лунок Ø68 под подрозетники
+  const wЩ=щитки.length*pr.w_щиток;
   const customWorkCost=(pr.custom_works||[]).reduce((s,w)=>s+(w.price||0)*(w.qty||0),0);
-  const totalWorkFull=totalWork+wCable+wStroba+wBoxes+wЩ+customWorkCost;
-  return{cables,totalCableM,cableCost,gofra,gofraCost,totalBoxes,boxCost,wago,wagoCost,protCost,щитокCost,vNom,vvodCost,entryCableM,entryCableCost,relayCost,customMatCost,brandExtraCost,brandExtras,rashodniCost,rashodniPct,totalMat,customWorkCost,totalWork,wCable,wStroba,wBoxes,wЩ,totalWorkFull,totalPoints,grand:totalMat+totalWorkFull,lines};
+  const totalWorkFull=totalWork+wCable+wStroba+wBoxes+wLunki+wЩ+customWorkCost;
+  return{cables,totalCableM,cableCost,gofra,gofraCost,totalBoxes,boxCost,wago,wagoCost,protCost,щитокCost,vNom,vvodCost,entryCableM,entryCableCost,relayCost,customMatCost,brandExtraCost,brandExtras,rashodniCost,rashodniPct,totalMat,customWorkCost,totalWork,wCable,wStroba,wBoxes,wLunki,wЩ,totalWorkFull,totalPoints,grand:totalMat+totalWorkFull,lines};
 }
 
 function buildЩитокPlan(щитокId){
@@ -1066,6 +1095,7 @@ function openRF(i){
   curCeilingMode=r.ceilingMode||(r.cablingMode==='stroba'?'open':(r.cablingMode||'open'));
   curUserLines=r.userLines?JSON.parse(JSON.stringify(r.userLines)):null;
   curPtOverrides=r.ptOverrides?JSON.parse(JSON.stringify(r.ptOverrides)):{};
+  curLedSwitch=r.ledSwitch||'none';
   curSurface=r.surface||false;
   // Загружаем сохранённые расстояния — здесь единственное место инициализации
   curPtDists=i!=null?{...(r.ptDists||{})}:{};
@@ -1144,6 +1174,10 @@ function openRF(i){
   rPtsList();push('s-rf',i!=null?'Изменить комнату':'Новая комната');
 }
 function selType(id){curType=id;document.querySelectorAll('.tc').forEach(el=>el.classList.toggle('sel',el.getAttribute('onclick')===`selType('${id}')`))}
+function selLedSwitch(val){
+  curLedSwitch=val;
+  rPtsList();
+}
 function selWall(cm){
   curWallMode=cm;
   ['stroba','gofra','lotok'].forEach(c=>{
@@ -1194,6 +1228,7 @@ let curWallMode='stroba';
 let curCeilingMode='open';
 let curUserLines=null;
 let curPtOverrides={}; // {ptId: {boxes, hStd, cable}} — переопределения параметров точек
+let curLedSwitch='none'; // 'none'|'vkl1'|'vkl1n' — тип выключателя для LED-ленты
 // curSurface: true = накладной монтаж (без штроб и подрозетников)
 let curSurface=false;
 
@@ -1436,6 +1471,24 @@ function rPtsList(){
     h+=`</div>`;
   }
 
+  // ── LED-лента: выбор выключателя ──
+  if((curPts['led']||0)>0){
+    const sw=curLedSwitch||'none';
+    h+=`<div class="slabel" style="margin-top:12px">💡 Выключатель для LED-ленты</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:4px">
+      ${[
+        {v:'none',ico:'—',lbl:'Без выкл.'},
+        {v:'vkl1',ico:'💡',lbl:'Встроенный'},
+        {v:'vkl1n',ico:'💡',lbl:'Накладной'},
+      ].map(o=>`<div onclick="selLedSwitch('${o.v}')"
+        style="border:2px solid ${sw===o.v?'var(--acc)':'var(--bdr)'};border-radius:var(--rs);padding:8px 4px;text-align:center;cursor:pointer;background:${sw===o.v?'var(--acc-l)':'var(--bg)'}">
+        <div style="font-size:18px">${o.ico}</div>
+        <div style="font-size:10px;font-weight:600;color:${sw===o.v?'var(--acc)':'var(--t2)'};margin-top:2px">${o.lbl}</div>
+      </div>`).join('')}
+    </div>
+    <div style="font-size:10px;color:var(--t3);margin-bottom:4px">Выключатель добавится в расчёт автоматически — подрозетник, кабель, работа</div>`;
+  }
+
   document.getElementById('pts-c').innerHTML=h;
 }
 
@@ -1601,7 +1654,7 @@ function chQ(id,d){
 }function saveRoom(){const cl=client();if(!cl)return;if(!cl.комнаты)cl.комнаты=[];
   let finalPts=curPts,finalPtDists=curPtDists,finalUserLines=curUserLines;
   if(curUserLines){finalPts={};curUserLines.forEach(ul=>Object.entries(ul.pts||{}).forEach(([k,v])=>{finalPts[k]=(finalPts[k]||0)+v;}));}
-  const r={name:v('рн')||'Комната',type:curType,l:parseFloat(v('рl'))||4,w:parseFloat(v('рw'))||3,h:parseFloat(v('рh'))||2.7,floor:v('рэ'),щитокId:parseInt(v('рщ'))||0,dist:parseFloat(v('рд'))||10,pts:finalPts,ptDists:finalPtDists,userLines:finalUserLines||null,ptOverrides:Object.keys(curPtOverrides).length?curPtOverrides:undefined,wiringType:curWiringType,wallMode:curWallMode,ceilingMode:curCeilingMode,cablingMode:curWallMode,surface:curSurface,lineOverrides:eR!=null?((cl.комнаты[eR]||{}).lineOverrides||{}):{}};
+  const r={name:v('рн')||'Комната',type:curType,l:parseFloat(v('рl'))||4,w:parseFloat(v('рw'))||3,h:parseFloat(v('рh'))||2.7,floor:v('рэ'),щитокId:parseInt(v('рщ'))||0,dist:parseFloat(v('рд'))||10,pts:finalPts,ptDists:finalPtDists,userLines:finalUserLines||null,ptOverrides:Object.keys(curPtOverrides).length?curPtOverrides:undefined,ledSwitch:curLedSwitch!=='none'?curLedSwitch:undefined,wiringType:curWiringType,wallMode:curWallMode,ceilingMode:curCeilingMode,cablingMode:curWallMode,surface:curSurface,lineOverrides:eR!=null?((cl.комнаты[eR]||{}).lineOverrides||{}):{}};
   if(eR!=null)cl.комнаты[eR]=r;else cl.комнаты.push(r);save();pop();rRooms()
 }
 function delR(i){if(!confirm('Удалить?'))return;const cl=client();if(!cl)return;cl.комнаты.splice(i,1);save();rRooms()}
@@ -1836,6 +1889,7 @@ function rSmeta(){
     <div class="mr"><span class="mn">Прокладка (штроба/гофра/лоток)</span><span class="mq">${s.totalCableM} м</span><span class="mp">${fmt(s.wStroba)} ₽</span></div>
     <div class="mr"><span class="mn">Прокладка кабеля</span><span class="mq">${s.totalCableM} м</span><span class="mp">${fmt(s.wCable)} ₽</span></div>
     <div class="mr"><span class="mn">Монтаж подрозетников</span><span class="mq">${s.totalBoxes} шт</span><span class="mp">${fmt(s.wBoxes)} ₽</span></div>
+    ${s.wLunki>0?`<div class="mr"><span class="mn">Сверление лунок Ø68</span><span class="mq">${s.totalBoxes} шт</span><span class="mp">${fmt(s.wLunki)} ₽</span></div>`:''}
     <div class="mr"><span class="mn">Сборка щитков</span><span class="mq">${(cl.щитки||[]).length} шт</span><span class="mp">${fmt(s.wЩ)} ₽</span></div>
     ${(pr.custom_works||[]).filter(w=>w.qty>0).map((w,i)=>`
       <div class="mr" style="flex-wrap:wrap;gap:0">
@@ -2352,7 +2406,7 @@ function rSet(){
     {sec:'Общие расценки (₽/м или ₽/шт)'},
     {k:'w_stroba',l:'Штробление, м'},{k:'w_cable',l:'Прокладка кабеля, м'},
     {k:'w_gofra',l:'Прокладка в гофре, м'},{k:'w_lotok',l:'Прокладка в лотке, м'},
-    {k:'w_podroz',l:'Монтаж подрозетника, шт'},{k:'w_щиток',l:'Сборка щитка, шт'},
+    {k:'w_podroz',l:'Монтаж подрозетника, шт'},{k:'w_lunka',l:'Сверление лунки Ø68, шт'},{k:'w_щиток',l:'Сборка щитка, шт'},
     {sec:'Расходники'},
     {k:'rashodni_pct',l:'% от стоимости материалов',unit:'%',hint:'Буры, дюбели, хомуты, изолента, алебастр. Рекомендуется 5–10%'},
   ];
