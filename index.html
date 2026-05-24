@@ -2431,7 +2431,13 @@ function openCustomPtEditor(idx){
   const cp=idx>=0?(pr.custom_pts||[])[idx]:null;
   const ICONS=['🔌','💡','🌡','📷','🔔','🔐','🖥','📱','🌐','⚡','💧','🔥','❄️','🎵','🔧'];
   const CABLES=['2x1.5','3x1.5','3x2.5','3x4','3x6'];
-  const GRPS=[{v:'roz',l:'Розетки'},{v:'light',l:'Освещение'},{v:'pwr',l:'Мощные (отд.линия)'}];
+  const GRPS=[
+    {v:'roz',    l:'Розетки — шлейф, спуск по стене'},
+    {v:'rozIP',  l:'Розетки влажные (IP44) — с УЗО'},
+    {v:'light_spot', l:'Споты/Потолочные — отвод 0.5м от магистрали'},
+    {v:'light_main', l:'Освещение осн. — люстра, выключатель'},
+    {v:'pwr',    l:'Мощные — отдельный кабель от щитка до прибора'},
+  ];
 
   let h=`<div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r);padding:14px;margin-top:8px;box-shadow:var(--shd)">
     <div style="font-size:13px;font-weight:600;margin-bottom:12px">${idx>=0?'Редактировать точку':'Новая точка'}</div>
@@ -2454,7 +2460,12 @@ function openCustomPtEditor(idx){
     <div class="r2">
       <div class="fl"><label>Группа</label>
         <select id="cpt-grp">
-          ${GRPS.map(g=>`<option value="${g.v}" ${(cp?.grp||'roz')===g.v?'selected':''}>${g.l}</option>`).join('')}
+        ${GRPS.map(g=>{
+          // Определяем текущую группу с учётом lightSub
+          let curGrp=cp?.grp||'roz';
+          if(curGrp==='light'&&cp?.lightSub) curGrp='light_'+cp.lightSub;
+          return `<option value="${g.v}" ${curGrp===g.v?'selected':''}>${g.l}</option>`;
+        }).join('')}
         </select></div>
       <div class="fl"><label>Цена работы, ₽/шт</label>
         <input type="number" id="cpt-price" value="${cp?.price||0}" min="0"></div>
@@ -2474,10 +2485,12 @@ function openCustomPtEditor(idx){
       </label>
     </div>
     <div style="background:var(--bg3);border-radius:var(--rs);padding:8px 10px;margin-top:4px;font-size:11px;color:var(--t3);line-height:1.6">
-      <b style="color:var(--t2)">Подрозетников</b> — сколько монтируется под эту точку.<br>
-      Розетка одиночная = 1, двойная = 1 (блок), тройная блоком = 1 или 3 (если отдельные).<br>
-      <b style="color:var(--t2)">Мощность кВт</b> — если задана, автомат рассчитается по току. Иначе — по кабелю.<br>
-      <b style="color:var(--t2)">Группа "Мощные"</b> — отдельная линия от щитка напрямую до прибора.
+      <b style="color:var(--t2)">Розетки</b> — кабель петлёй через все точки, спуск по стене до высоты установки.<br>
+      <b style="color:var(--t2)">Споты/Потолочные</b> — магистраль по потолку, на каждый светильник 0.5м отвод вниз. Высота = 0 (в потолке). Так же работают трековые споты и LED-лента.<br>
+      <b style="color:var(--t2)">Освещение осн.</b> — люстра (h=0) или выключатель (h=900мм). Спуск от потолка до выключателя.<br>
+      <b style="color:var(--t2)">Мощные</b> — отдельный кабель от щитка напрямую до прибора. Расстояние вводится отдельно для каждого.<br>
+      <b style="color:var(--t2)">Подрозетников</b> — 0 для спотов и светильников, 1 для розеток/выключателей.<br>
+      <b style="color:var(--t2)">Высота мм</b> — 0 для потолочных приборов, 200 для розеток, 900 для выключателей.
     </div>
     <div style="display:flex;gap:8px;margin-top:4px">
       <button class="btn btn-p" style="flex:1" onclick="saveCustomPt(${idx})">
@@ -2506,15 +2519,21 @@ function saveCustomPt(idx){
   const ico=document.getElementById('cpt-ico-hidden')?.textContent||'🔌';
   const cable=document.getElementById('cpt-cable')?.value||'3x2.5';
   const hStd=parseInt(document.getElementById('cpt-h')?.value)||200;
-  const grp=document.getElementById('cpt-grp')?.value||'roz';
+  const grpRaw=document.getElementById('cpt-grp')?.value||'roz';
   const price=parseFloat(document.getElementById('cpt-price')?.value)||0;
   const needUzo=document.getElementById('cpt-uzo')?.checked||false;
   const boxes=parseInt(document.getElementById('cpt-boxes')?.value??1)||0;
   const pwrVal=parseFloat(document.getElementById('cpt-pwr')?.value)||null;
 
+  // Маппинг: light_spot/light_main → grp:'light' + lightSub
+  let grp=grpRaw, lightSub=undefined;
+  if(grpRaw==='light_spot'){grp='light';lightSub='spot';}
+  else if(grpRaw==='light_main'){grp='light';lightSub='main';}
+
   const pt={
     id: idx>=0 ? ((PR().custom_pts||[])[idx]?.id || 'cpt_'+Date.now()) : 'cpt_'+Date.now(),
     lbl,ico,cable,hStd,grp,
+    ...(lightSub?{lightSub}:{}),
     boxes,
     needUzo,
     price,
