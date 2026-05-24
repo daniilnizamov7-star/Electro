@@ -623,7 +623,7 @@ function calcRoomLines(r){
     // LED выключатель — работает в обоих режимах
     if(r.ledSwitch&&r.ledSwitch!=='none'&&(r.pts||{}).led){
       const swId=r.ledSwitch;const swPt=PT.find(p=>p.id===swId);
-      if(swPt){const isSurf=!!swPt.surface;const swLen=calcLenRoz(r,parseFloat((r.ptDists||{}).led)||5,swPt.hStd,1);const swLO=typeof swLen==='object'?swLen:{total:swLen,horiz:Math.ceil(swLen*0.4),vert:Math.ceil(swLen*0.6)};
+      if(swPt){const isSurf=!!swPt.surface;const swLen=calcLenRoz(r,parseFloat((r.ptDists||{}).led_sw)||parseFloat((r.ptDists||{}).led)||5,swPt.hStd,1);const swLO=typeof swLen==='object'?swLen:{total:swLen,horiz:Math.ceil(swLen*0.4),vert:Math.ceil(swLen*0.6)};
         lines.push({label:`${r.name} — Выкл. LED (${swPt.lbl})`,cable:swPt.cable,len:swLO.total,lenHoriz:swLO.horiz,lenVert:swLO.vert,qty:1,boxes:isSurf?0:swPt.boxes,work:PR()['w_'+swId]||PR().w_vkl1||200,roomName:r.name,щитокId:r.щитокId,grp:'light_main',is_pwr:false,isSurface:isSurf,prot:autoProtForGrp('light_main',r.type||'living'),overrideKey:'led_sw',manual_prot:false,_maxDist:0,_isPwr:false,_isLight:true});}
     }
     return lines;
@@ -749,7 +749,7 @@ function calcRoomLines(r){
     const swPt=PT.find(p=>p.id===swId);
     if(swPt){
       const isSurf=!!swPt.surface;
-      const swLen=calcLenRoz(r,parseFloat((r.ptDists||{}).led)||5,swPt.hStd,1);
+      const swLen=calcLenRoz(r,parseFloat((r.ptDists||{}).led_sw)||parseFloat((r.ptDists||{}).led)||5,swPt.hStd,1);
       const swLenObj=typeof swLen==='object'?swLen:{total:swLen,horiz:Math.ceil(swLen*0.4),vert:Math.ceil(swLen*0.6)};
       const swWork=PR()['w_'+swId]||PR().w_vkl1||200;
       lines.push({
@@ -1474,20 +1474,34 @@ function rPtsList(){
   // ── LED-лента: выбор выключателя ──
   if((curPts['led']||0)>0){
     const sw=curLedSwitch||'none';
+    const swDistVal=curPtDists['led_sw']>0?curPtDists['led_sw']:'';
+    const swPtInfo={
+      none:{boxes:0,lbl:'Без выкл.',hint:''},
+      vkl1:{boxes:1,lbl:'Встроенный',hint:'1 подрозетник'},
+      vkl1n:{boxes:0,lbl:'Накладной',hint:'без подрозетника'},
+    };
     h+=`<div class="slabel" style="margin-top:12px">💡 Выключатель для LED-ленты</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:4px">
-      ${[
-        {v:'none',ico:'—',lbl:'Без выкл.'},
-        {v:'vkl1',ico:'💡',lbl:'Встроенный'},
-        {v:'vkl1n',ico:'💡',lbl:'Накладной'},
-      ].map(o=>`<div onclick="selLedSwitch('${o.v}')"
-        style="border:2px solid ${sw===o.v?'var(--acc)':'var(--bdr)'};border-radius:var(--rs);padding:8px 4px;text-align:center;cursor:pointer;background:${sw===o.v?'var(--acc-l)':'var(--bg)'}">
-        <div style="font-size:18px">${o.ico}</div>
-        <div style="font-size:10px;font-weight:600;color:${sw===o.v?'var(--acc)':'var(--t2)'};margin-top:2px">${o.lbl}</div>
-      </div>`).join('')}
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+      ${['none','vkl1','vkl1n'].map(v=>{
+        const info=swPtInfo[v];
+        const sel=sw===v;
+        return `<div onclick="selLedSwitch('${v}')"
+          style="border:2px solid ${sel?'var(--acc)':'var(--bdr)'};border-radius:var(--rs);padding:8px 4px;text-align:center;cursor:pointer;background:${sel?'var(--acc-l)':'var(--bg)'}">
+          <div style="font-size:18px">${v==='none'?'—':'💡'}</div>
+          <div style="font-size:10px;font-weight:600;color:${sel?'var(--acc)':'var(--t2)'};margin-top:2px">${info.lbl}</div>
+          ${info.hint?`<div style="font-size:9px;color:var(--t3);margin-top:1px">${info.hint}</div>`:''}
+        </div>`;
+      }).join('')}
     </div>
-    <div style="font-size:10px;color:var(--t3);margin-bottom:4px">Выключатель добавится в расчёт автоматически — подрозетник, кабель, работа</div>`;
-  }
+    ${sw!=='none'?`<div style="background:var(--acc-l);border:1.5px solid var(--acc);border-radius:var(--rs);padding:8px 12px;display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <span style="flex:1;font-size:11px;color:var(--acc);font-weight:500">От щитка до выключателя, м</span>
+      <input type="number" id="dist_led_sw"
+        style="width:70px;background:var(--bg2);border:1.5px solid var(--acc);border-radius:6px;padding:5px 8px;font-size:13px;font-weight:600;text-align:center;outline:none;color:var(--acc)"
+        placeholder="0" value="${swDistVal}" min="0" step="0.5"
+        oninput="curPtDists['led_sw']=parseFloat(this.value)||0">
+      <span style="font-size:11px;color:var(--acc)">м</span>
+    </div>`:''}
+    <div style="font-size:10px;color:var(--t3);margin-bottom:4px">Выключатель добавится в расчёт: отдельная линия, свой кабель и работа</div>`;}
 
   document.getElementById('pts-c').innerHTML=h;
 }
@@ -1579,7 +1593,7 @@ function chULQ(ulId,ptId,d){
 
 function ptOvrPanel(pt){
   const ov=curPtOverrides[pt.id]||{};
-  const boxes=ov.boxes!=null?ov.boxes:pt.boxes;
+  const boxes=ov.boxes!=null?ov.boxes:pt.boxes; // pt.boxes может быть 0 — не заменяем на 1
   const hStd=ov.hStd!=null?ov.hStd:pt.hStd;
   const cable=ov.cable||pt.cable;
   const cables=['2x1.5','3x1.5','3x2.5','3x4','3x6','3x10'];
@@ -1618,7 +1632,7 @@ function togglePtOvr(ptId){
   // При первом открытии — создаём запись
   if(vis&&!curPtOverrides[ptId]){
     const pt=PT.find(p=>p.id===ptId);
-    if(pt)curPtOverrides[ptId]={boxes:pt.boxes,hStd:pt.hStd,cable:pt.cable};
+    if(pt)curPtOverrides[ptId]={boxes:pt.boxes,hStd:pt.hStd,cable:pt.cable}; // pt.boxes может быть 0
     el.innerHTML=ptOvrPanel(pt||{id:ptId,boxes:0,hStd:200,cable:'3x2.5'});
   }
   // Обновляем прозрачность кнопки
