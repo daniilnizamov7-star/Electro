@@ -1694,7 +1694,7 @@ function rSmeta(){
     ${s.entryCableM>0?`<div class="mr"><span class="mn">Кабель вводной</span><span class="mq">${s.entryCableM} м</span><span class="mp">${fmt(s.entryCableCost)} ₽</span></div>`:''}
     ${s.relayCost?`<div class="mr"><span class="mn">Реле напряжения</span><span class="mq">${(cl.щитки||[]).length} шт</span><span class="mp">${fmt(s.relayCost)} ₽</span></div>`:''}
     <div class="mr"><span class="mn">Щитки</span><span class="mq">${(cl.щитки||[]).length} шт</span><span class="mp">${fmt(s.щитокCost)} ₽</span></div>
-    ${(pr.custom_mats||[]).filter(m=>m.qty>0).map(m=>`<div class="mr"><span class="mn">${m.lbl}</span><span class="mq">${m.qty} ${m.qty_mode}</span><span class="mp">${fmt(m.price*m.qty)} ₽</span></div>`).join('')}
+    ${(pr.custom_mats||[]).filter(m=>m.qty>0).map((m,i)=>`<div class="mr"><span class="mn">${escHtml(m.lbl)}</span><span class="mq">${m.qty} ${m.qty_mode}</span><span class="mp">${fmt(m.price*m.qty)} ₽</span><button onclick="smetaDelMat(${i})" style="border:none;background:transparent;color:#ef4444;cursor:pointer;font-size:11px;padding:0 4px">✕</button></div>`).join('')}
     ${s.brandExtras&&s.brandExtras.length?s.brandExtras.map(e=>`<div class="mr"><span class="mn">${e.lbl} (${B().lbl})</span><span class="mq">${e.qty||1} шт</span><span class="mp">${fmt((e.price||0)*(e.qty||1))} ₽</span></div>`).join(''):''}
     ${s.rashodniCost>0?`<div class="mr" style="background:var(--or-l)"><span class="mn" style="color:var(--or)">🔧 Расходники (${s.rashodniPct}%)</span><span class="mq"></span><span class="mp" style="color:var(--or)">${fmt(s.rashodniCost)} ₽</span></div>`:''}
   </div>
@@ -1745,12 +1745,13 @@ function renderClientSwitcher(){
 function switchClient(id){CUR=id;save();rSmeta();}
 
 function smetaAddWork(){
+  const lbl=prompt('Название работы:');if(!lbl||!lbl.trim())return;
+  const price=parseFloat(prompt('Цена за единицу (₽):')||'0')||0;
+  const unit=prompt('Единица (шт/м/кв.м):','шт')||'шт';
   if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_CLIENT};
   if(!PR_MAP[CUR].custom_works)PR_MAP[CUR].custom_works=[];
-  PR_MAP[CUR].custom_works.push({lbl:'',price:0,qty:1,unit:'шт'});
+  PR_MAP[CUR].custom_works.push({lbl:lbl.trim(),price,qty:1,unit});
   save();rSmeta();
-  // Скролл вниз
-  setTimeout(()=>{const el=document.getElementById('smeta-c');if(el)el.scrollTop=el.scrollHeight;},50);
 }
 function smetaAddFromTemplate(i){
   const wt=(GLOBAL.work_templates||[])[i];if(!wt)return;
@@ -1769,9 +1770,17 @@ function smetaDelWork(i){
   save();rSmeta();
 }
 function smetaAddMat(){
+  const lbl=prompt('Название материала:');if(!lbl||!lbl.trim())return;
+  const price=parseFloat(prompt('Цена за единицу (₽):')||'0')||0;
+  const qty=parseFloat(prompt('Количество:')||'1')||1;
+  const qty_mode=prompt('Единица (шт/м):','шт')||'шт';
   if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_CLIENT};
   if(!PR_MAP[CUR].custom_mats)PR_MAP[CUR].custom_mats=[];
-  PR_MAP[CUR].custom_mats.push({lbl:'',price:0,qty:1,qty_mode:'шт'});
+  PR_MAP[CUR].custom_mats.push({lbl:lbl.trim(),price,qty,qty_mode});
+  save();rSmeta();
+}
+function smetaDelMat(i){
+  if(PR_MAP[CUR]?.custom_mats)PR_MAP[CUR].custom_mats.splice(i,1);
   save();rSmeta();
 }
 function rZakup(){
@@ -2247,8 +2256,7 @@ function rSet(){
         </div>`;
       });
       h+=`</div><div style="margin-top:4px"><button class="btn" style="width:100%" onclick="openCustomPtEditor(-1)">+ Добавить свою точку</button></div>`;
-      h+=secHdr('Общие расценки (₽/м или ₽/шт)')+`<div class="mblk">`;
-      // Шаблоны доп.работ
+      inB=false; // блок закрыт, следующий {sec:} откроет новый
       return;
     }
     const val=pr[f.k]!=null?pr[f.k]:0;
