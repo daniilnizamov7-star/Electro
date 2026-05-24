@@ -237,6 +237,25 @@ const PT_BASE=[
   {id:'roz1n',lbl:'Розетка накладная',ico:'🔌',cable:'3x2.5',grp:'roz',boxes:0,hStd:200,surface:true},
   {id:'vkl1n',lbl:'Выключатель накладной',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:900,surface:true,lightSub:'main'},
   {id:'rozIPn',lbl:'Розетка IP44 накладная',ico:'🔌',cable:'3x2.5',grp:'rozIP',boxes:0,hStd:200,needUzo:true,surface:true},
+  // Доп. точки
+  {id:'roz3',lbl:'Розетка тройная (блок)',ico:'🔌',cable:'3x2.5',grp:'roz',boxes:1,hStd:200},
+  {id:'roz_floor',lbl:'Розетка напольная',ico:'🔌',cable:'3x2.5',grp:'roz',boxes:1,hStd:50},
+  {id:'vkl3',lbl:'Выключатель 3-кл.',ico:'💡',cable:'2x1.5',grp:'light',boxes:1,hStd:900,lightSub:'main'},
+  {id:'vklpr2',lbl:'Проходной выкл. (2-й конец)',ico:'💡',cable:'3x1.5',grp:'light',boxes:1,hStd:900,lightSub:'main'},
+  {id:'dimmer',lbl:'Диммер',ico:'💡',cable:'3x1.5',grp:'light',boxes:1,hStd:900,lightSub:'main'},
+  {id:'sensor_motion',lbl:'Датчик движения',ico:'👁',cable:'3x1.5',grp:'light',boxes:0,hStd:2400,lightSub:'main'},
+  {id:'pwr_tp_termo',lbl:'Терморегулятор т/п',ico:'🌡',cable:'3x1.5',grp:'light',boxes:1,hStd:900,lightSub:'main'},
+  {id:'pwr_kond_out',lbl:'Кабель кондей (нар.блок)',ico:'❄️',cable:'3x2.5',grp:'pwr',boxes:0,hStd:2200,pwr:0},
+  {id:'pwr_domofon',lbl:'Вызывная панель/домофон',ico:'🔔',cable:'3x1.5',grp:'pwr',boxes:1,hStd:1500,pwr:0.05},
+  {id:'pwr_disheat',lbl:'Диспенсер/кофемашина',ico:'☕',cable:'3x2.5',grp:'pwr',boxes:0,hStd:400,pwr:1.5},
+  {id:'pwr_sauna',lbl:'Сауна/хамам',ico:'🔥',cable:'3x6',grp:'pwr',boxes:0,hStd:300,pwr:6.0},
+  {id:'pwr_jacuzzi',lbl:'Джакузи/ванна',ico:'🛁',cable:'3x4',grp:'pwr',boxes:0,hStd:300,pwr:3.0,needUzo:true},
+  {id:'pwr_gate',lbl:'Ворота/шлагбаум',ico:'🚗',cable:'3x2.5',grp:'pwr',boxes:0,hStd:1000,pwr:0.5},
+  {id:'pwr_pump',lbl:'Насос/скважина',ico:'💧',cable:'3x2.5',grp:'pwr',boxes:0,hStd:300,pwr:1.5,needUzo:true},
+  {id:'pwr_boiler_gas',lbl:'Газовый котёл (элп.)',ico:'🔥',cable:'3x1.5',grp:'pwr',boxes:1,hStd:1500,pwr:0.1},
+  {id:'spotout',lbl:'Светильник уличный',ico:'💡',cable:'3x1.5',grp:'light',boxes:0,hStd:2500,lightSub:'spot'},
+  {id:'spot_ip65',lbl:'Светильник IP65 (ванная)',ico:'💡',cable:'2x1.5',grp:'light',boxes:0,hStd:0,lightSub:'spot'},
+  {id:'pwr_svet_podsv',lbl:'Подсветка рабочей зоны',ico:'💡',cable:'3x1.5',grp:'pwr',boxes:1,hStd:500,pwr:0.05,isLed:true},
 ];
 // Возвращает встроенные точки + пользовательские из настроек
 function getPT(){
@@ -349,6 +368,10 @@ const DP_GLOBAL={brand:'IEK',
   w_vkl1:200,w_vkl2:250,w_vklpr:350,w_spot:200,w_lstr:250,w_led:350,w_trak:300,
   w_pwr_var:1000,w_pwr_duh:700,w_pwr_boj:600,w_pwr_stir:600,w_pwr_pmm:600,
   w_pwr_kond:700,w_pwr_tp:800,w_pwr_holod:200,w_pwr_ps:600,w_pwr_vent:250,w_pwr_vyth:200,
+  w_pwr_tp_termo:400,w_pwr_kond_out:300,w_pwr_domofon:800,w_pwr_disheat:400,
+  w_pwr_sauna:1500,w_pwr_jacuzzi:1200,w_pwr_gate:600,w_pwr_pump:500,w_pwr_boiler_gas:400,
+  w_pwr_svet_podsv:350,w_roz3:350,w_roz_floor:400,w_vkl3:250,w_vklpr2:250,
+  w_dimmer:350,w_sensor_motion:400,w_spotout:300,w_spot_ip65:200,
   w_stroba:120,w_cable:50,w_gofra:40,w_lotok:30,w_podroz:100,w_lunka:150,w_щиток:2000,
   rashodni_pct:7,w_surface_pct:60,labels:{},custom_pts:[]};
 
@@ -620,11 +643,15 @@ function calcRoomLines(r){
         _ulId:ul.id,
       });
     });
-    // LED выключатель — работает в обоих режимах
+    // LED выключатель
     if(r.ledSwitch&&r.ledSwitch!=='none'&&(r.pts||{}).led){
       const swId=r.ledSwitch;const swPt=PT.find(p=>p.id===swId);
-      if(swPt){const isSurf=!!swPt.surface;const swLen=calcLenRoz(r,parseFloat((r.ptDists||{}).led_sw)||parseFloat((r.ptDists||{}).led)||5,swPt.hStd,1);const swLO=typeof swLen==='object'?swLen:{total:swLen,horiz:Math.ceil(swLen*0.4),vert:Math.ceil(swLen*0.6)};
-        lines.push({label:`${r.name} — Выкл. LED (${swPt.lbl})`,cable:swPt.cable,len:swLO.total,lenHoriz:swLO.horiz,lenVert:swLO.vert,qty:1,boxes:isSurf?0:swPt.boxes,work:PR()['w_'+swId]||PR().w_vkl1||200,roomName:r.name,щитокId:r.щитокId,grp:'light_main',is_pwr:false,isSurface:isSurf,prot:autoProtForGrp('light_main',r.type||'living'),overrideKey:'led_sw',manual_prot:false,_maxDist:0,_isPwr:false,_isLight:true});}
+      if(swPt){
+        const isSurf=!!swPt.surface;
+        const distToSw=parseFloat((r.ptDists||{}).led_sw)||parseFloat((r.ptDists||{}).led)||5;
+        const swLen=calcLenRoz(r,distToSw,swPt.hStd,1);const swLO=typeof swLen==='object'?swLen:{total:swLen,horiz:Math.ceil(swLen*0.4),vert:Math.ceil(swLen*0.6)};
+        lines.push({label:`${r.name} — Выкл. LED (${swPt.lbl})`,cable:swPt.cable,len:swLO.total,lenHoriz:swLO.horiz,lenVert:swLO.vert,qty:1,boxes:isSurf?0:swPt.boxes,work:PR()['w_'+swId]||PR().w_vkl1||200,roomName:r.name,щитокId:r.щитокId,grp:'light_main',is_pwr:false,isSurface:isSurf,prot:autoProtForGrp('light_main',r.type||'living'),overrideKey:'led_sw',manual_prot:false,_maxDist:distToSw,_isPwr:false,_isLight:true});
+      }
     }
     return lines;
   }
@@ -743,14 +770,35 @@ function calcRoomLines(r){
     }
   });
 
-  // ── Выключатель для LED-ленты ──
-  if(r.ledSwitch&&r.ledSwitch!=='none'&&(r.pts||{}).led){
-    const swId=r.ledSwitch;
-    const swPt=PT.find(p=>p.id===swId);
+  // ── LED-лента: правильная схема щиток→коробка→(выкл + БП) ──
+  if((r.pts||{}).led){
+    const ledQty=(r.pts||{}).led||0;
+    const distToBP=parseFloat((r.ptDists||{}).led)||5;
+    const distToSw=parseFloat((r.ptDists||{}).led_sw)||distToBP;
+    const hasSw=r.ledSwitch&&r.ledSwitch!=='none';
+    const swId=hasSw?r.ledSwitch:null;
+    const swPt=swId?PT.find(p=>p.id===swId):null;
+
+    // Общий кабель от щитка до распредкоробки = min расстояние из двух направлений
+    // После коробки два отвода: один до БП, один до выключателя
+    // Но физически: кабель идёт от щитка до выключателя (он по пути или рядом)
+    // затем от выключателя до БП.
+    // Схема: щиток → [кабель 1] → коробка/выкл → [кабель 2] → БП → лента
+    // Длина линии LED = дистанция от щитка до БП (через выкл или напрямую)
+    // Уже считается правильно — distToBP используется в calcRoomLines для led-линии
+    // Нужно только скорректировать: если есть выкл, кабель от щитка идёт до выкл,
+    // а от выкл до БП — короткий отвод (разница дистанций)
+    // Для простоты: длина LED-линии = max(distToBP, distToSw) + разница как отвод
+
     if(swPt){
       const isSurf=!!swPt.surface;
-      const swLen=calcLenRoz(r,parseFloat((r.ptDists||{}).led_sw)||parseFloat((r.ptDists||{}).led)||5,swPt.hStd,1);
-      const swLenObj=typeof swLen==='object'?swLen:{total:swLen,horiz:Math.ceil(swLen*0.4),vert:Math.ceil(swLen*0.6)};
+      // Расстояние от щитка до выключателя
+      const lenToSw=calcLenRoz(r,distToSw,swPt.hStd,1);
+      const swLenObj=typeof lenToSw==='object'?lenToSw:{total:lenToSw,horiz:Math.ceil(lenToSw*0.4),vert:Math.ceil(lenToSw*0.6)};
+      // Отвод от выкл/коробки до БП (дополнительный хвост)
+      const extraToBP=Math.max(0,distToBP-distToSw);
+      const extraLen=Math.ceil(extraToBP*1.15+0.4); // короткий отвод без полного запаса
+
       const swWork=PR()['w_'+swId]||PR().w_vkl1||200;
       lines.push({
         label:`${r.name} — Выкл. LED (${swPt.lbl})`,
@@ -760,8 +808,12 @@ function calcRoomLines(r){
         is_pwr:false,isSurface:isSurf,
         prot:autoProtForGrp('light_main',r.type||'living'),
         overrideKey:'led_sw',manual_prot:false,
-        _maxDist:0,_isPwr:false,_isLight:true,
+        _maxDist:distToSw,_isPwr:false,_isLight:true,
       });
+      // Отвод выкл→БП учитывается в LED-линии через добавленный метраж
+      // (LED-линия уже создана в основном цикле с distToBP)
+    } else if(!hasSw){
+      // Без выключателя — уже посчитано выше в основном цикле
     }
   }
 
@@ -798,7 +850,34 @@ function getPueWarns(){
     // Балкон/улица
     if((r.type==='balcony'||r.type==='outdoor')&&((pts.roz1||0)+(pts.roz2||0))>0)
       errors.push(`${r.name}: на балконе/улице розетки минимум IP44 (ПУЭ 7.1.50)`);
-    // Варочная — однофазная 220В, кабель 3×6
+    // Проходной выключатель: нужен второй конец
+    const vklprQ=pts.vklpr||0;
+    const vklpr2Q=pts.vklpr2||0;
+    if(vklprQ>0&&vklpr2Q===0)
+      notices.push(`${r.name}: проходной выключатель — добавьте «Проходной выкл. (2-й конец)» для второй точки`);
+    if(vklprQ>0&&vklpr2Q>0&&vklprQ!==vklpr2Q)
+      notices.push(`${r.name}: число проходных выключателей (${vklprQ}) не совпадает со вторыми концами (${vklpr2Q})`);
+    // Тёплый пол: нужен терморегулятор
+    const tpQ=r.pts?.pwr_tp||0;
+    const termoQ=r.pts?.pwr_tp_termo||0;
+    if(tpQ>0&&termoQ===0)
+      notices.push(`${r.name}: тёплый пол — добавьте «Терморегулятор т/п» (отдельный подрозетник h=900)`);
+    // Кондиционер: нужен кабель до наружного блока
+    const kondQ=r.pts?.pwr_kond||0;
+    const kondOutQ=r.pts?.pwr_kond_out||0;
+    if(kondQ>0&&kondOutQ===0)
+      notices.push(`${r.name}: кондиционер — добавьте «Кабель кондей (нар.блок)» для трассы до внешнего блока`);
+    const ptOvr=r.ptOverrides||{};
+    Object.entries(pts).forEach(([ptId,qty])=>{
+      if(!qty)return;
+      const ptBase=PT.find(p=>p.id===ptId);if(!ptBase)return;
+      const ov=ptOvr[ptId]||{};
+      const boxes=ov.boxes!=null?ov.boxes:ptBase.boxes;
+      if(ptBase.grp==='pwr'&&ptBase.needUzo&&boxes>0){
+        // Влажный прибор с подрозетником — нужна скрытая IP44 розетка
+        notices.push(`${r.name} — ${ptBase.lbl}: есть подрозетник → нужна скрытая розетка IP44 (по ПУЭ). Добавьте в работу монтаж IP44.`);
+      }
+    });
   });
   // Ручно убранное обязательное УЗО
   getAllLines().forEach(l=>{
@@ -822,7 +901,10 @@ function calcSmeta(){
   const pr=PR();const b=B();
   const cables={};let totalBoxes=0,totalWork=0,totalPoints=0;
   lines.forEach(l=>{
+    // Основной метраж линии
     cables[l.cable]=(cables[l.cable]||0)+l.len;
+    // Запас на подключение в щитке: 0.5м на каждую линию
+    cables[l.cable]=(cables[l.cable]||0)+0.5;
     totalWork+=l.work;totalPoints+=l.qty;
     const r2=(cl?.комнаты||[]).find(c=>c.name===l.roomName);
     if(!r2?.surface && !l.isSurface) totalBoxes+=l.boxes;
@@ -839,6 +921,18 @@ function calcSmeta(){
   const gofraCost=gofra*b.gofra16;
   const boxCost=totalBoxes*b.podroz;
   const wago=Math.ceil(totalPoints*3),wagoCost=wago*b.wago_3;
+  // Работа монтажа IP44 розеток для влажных мощных приборов с подрозетником
+  let wIP44Extra=0;
+  (cl.комнаты||[]).forEach(r=>{
+    const ptOvr=r.ptOverrides||{};
+    Object.entries(r.pts||{}).forEach(([ptId,qty])=>{
+      if(!qty)return;
+      const ptBase=PT.find(p=>p.id===ptId);if(!ptBase)return;
+      if(ptBase.grp!=='pwr'||!ptBase.needUzo)return;
+      const boxes=(ptOvr[ptId]?.boxes!=null)?ptOvr[ptId].boxes:ptBase.boxes;
+      if(boxes>0) wIP44Extra+=qty*(pr.w_rozIP||400); // монтаж скрытой IP44
+    });
+  });
   // Защита по типу каждой линии
   let protCost=0;
   lines.forEach(l=>{const p=l.prot;if(p.type==='auto')protCost+=autoP(p.nom,1);else if(p.type==='dif')protCost+=difP(p.nom,p.ma);else protCost+=uzoP(25,p.ma||30)+autoP(p.nom,1)});
@@ -900,8 +994,8 @@ function calcSmeta(){
   const wLunki=totalBoxes*(pr.w_lunka||150); // сверление лунок Ø68 под подрозетники
   const wЩ=щитки.length*pr.w_щиток;
   const customWorkCost=(pr.custom_works||[]).reduce((s,w)=>s+(w.price||0)*(w.qty||0),0);
-  const totalWorkFull=totalWork+wCable+wStroba+wBoxes+wLunki+wЩ+customWorkCost;
-  return{cables,totalCableM,cableCost,gofra,gofraCost,totalBoxes,boxCost,wago,wagoCost,protCost,щитокCost,vNom,vvodCost,entryCableM,entryCableCost,relayCost,customMatCost,brandExtraCost,brandExtras,rashodniCost,rashodniPct,totalMat,customWorkCost,totalWork,wCable,wStroba,wBoxes,wLunki,wЩ,totalWorkFull,totalPoints,grand:totalMat+totalWorkFull,lines};
+  const totalWorkFull=totalWork+wCable+wStroba+wBoxes+wLunki+wЩ+wIP44Extra+customWorkCost;
+  return{cables,totalCableM,cableCost,gofra,gofraCost,totalBoxes,boxCost,wago,wagoCost,protCost,щитокCost,vNom,vvodCost,entryCableM,entryCableCost,relayCost,customMatCost,brandExtraCost,brandExtras,rashodniCost,rashodniPct,totalMat,customWorkCost,totalWork,wCable,wStroba,wBoxes,wLunki,wIP44Extra,wЩ,totalWorkFull,totalPoints,grand:totalMat+totalWorkFull,lines};
 }
 
 function buildЩитокPlan(щитокId){
@@ -1904,6 +1998,7 @@ function rSmeta(){
     <div class="mr"><span class="mn">Прокладка кабеля</span><span class="mq">${s.totalCableM} м</span><span class="mp">${fmt(s.wCable)} ₽</span></div>
     <div class="mr"><span class="mn">Монтаж подрозетников</span><span class="mq">${s.totalBoxes} шт</span><span class="mp">${fmt(s.wBoxes)} ₽</span></div>
     ${s.wLunki>0?`<div class="mr"><span class="mn">Сверление лунок Ø68</span><span class="mq">${s.totalBoxes} шт</span><span class="mp">${fmt(s.wLunki)} ₽</span></div>`:''}
+    ${s.wIP44Extra>0?`<div class="mr" style="background:var(--bg3)"><span class="mn" style="font-size:11px">🔌 Монтаж IP44 розеток (влажные приборы)</span><span class="mq"></span><span class="mp">${fmt(s.wIP44Extra)} ₽</span></div>`:''}
     <div class="mr"><span class="mn">Сборка щитков</span><span class="mq">${(cl.щитки||[]).length} шт</span><span class="mp">${fmt(s.wЩ)} ₽</span></div>
     ${(pr.custom_works||[]).filter(w=>w.qty>0).map((w,i)=>`
       <div class="mr" style="flex-wrap:wrap;gap:0">
@@ -2416,6 +2511,15 @@ function rSet(){
     {k:'w_pwr_boj',l:'Водонагреватель',ptId:'pwr_boj'},{k:'w_pwr_stir',l:'Стиральная машина',ptId:'pwr_stir'},
     {k:'w_pwr_pmm',l:'Посудомойка',ptId:'pwr_pmm'},{k:'w_pwr_kond',l:'Кондиционер',ptId:'pwr_kond'},
     {k:'w_pwr_tp',l:'Тёплый пол',ptId:'pwr_tp'},{k:'w_pwr_ps',l:'Полотенцесушитель эл.',ptId:'pwr_ps'},
+    {k:'w_pwr_tp_termo',l:'Терморегулятор т/п',ptId:'pwr_tp_termo'},{k:'w_pwr_kond_out',l:'Кабель кондей нар.блок',ptId:'pwr_kond_out'},
+    {k:'w_pwr_domofon',l:'Домофон/вызывная панель',ptId:'pwr_domofon'},{k:'w_pwr_boiler_gas',l:'Газовый котёл (электр.)',ptId:'pwr_boiler_gas'},
+    {k:'w_pwr_sauna',l:'Сауна/хамам',ptId:'pwr_sauna'},{k:'w_pwr_jacuzzi',l:'Джакузи',ptId:'pwr_jacuzzi'},
+    {k:'w_pwr_gate',l:'Ворота/шлагбаум',ptId:'pwr_gate'},{k:'w_pwr_pump',l:'Насос/скважина',ptId:'pwr_pump'},
+    {k:'w_pwr_svet_podsv',l:'Подсветка рабочей зоны',ptId:'pwr_svet_podsv'},
+    {k:'w_roz3',l:'Розетка тройная (блок)',ptId:'roz3'},{k:'w_roz_floor',l:'Розетка напольная',ptId:'roz_floor'},
+    {k:'w_vkl3',l:'Выключатель 3-кл.',ptId:'vkl3'},{k:'w_vklpr2',l:'Проходной (2-й конец)',ptId:'vklpr2'},
+    {k:'w_dimmer',l:'Диммер',ptId:'dimmer'},{k:'w_sensor_motion',l:'Датчик движения',ptId:'sensor_motion'},
+    {k:'w_spotout',l:'Светильник уличный',ptId:'spotout'},{k:'w_spot_ip65',l:'Светильник IP65',ptId:'spot_ip65'},
     {_cpts:true}, // <- кастомные точки вставятся здесь
     {sec:'Общие расценки (₽/м или ₽/шт)'},
     {k:'w_stroba',l:'Штробление, м'},{k:'w_cable',l:'Прокладка кабеля, м'},
