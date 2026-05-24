@@ -2337,36 +2337,88 @@ function openBrandEditor(bk){
   const userP=(pr.brand_prices||{})[bk]||{};
   const extras=(pr.brand_extra||{})[bk]||[];
 
+  const SECS=[
+    {id:'cable',lbl:'Кабель ВВГнг-LS (₽/м)'},
+    {id:'auto1',lbl:'Автоматы 1ф (₽/шт)'},
+    {id:'auto3',lbl:'Автоматы 3ф (₽/шт)'},
+    {id:'dif',lbl:'Дифавтоматы (₽/шт)'},
+    {id:'uzo',lbl:'УЗО (₽/шт)'},
+    {id:'relay',lbl:'Реле напряжения (₽/шт)'},
+    {id:'щ',lbl:'Щитки (₽/шт)'},
+    {id:'mat',lbl:'Монтажные материалы'},
+    {id:'other',lbl:'Прочее'},
+  ];
+
   const bFields=[
-    {sec:'Кабель ВВГнг-LS (₽/м)'},
+    {sec:'cable'},
     {k:'c_2x15',l:'2×1.5'},{k:'c_3x15',l:'3×1.5'},{k:'c_3x25',l:'3×2.5'},
     {k:'c_3x4',l:'3×4'},{k:'c_3x6',l:'3×6'},{k:'c_3x10',l:'3×10'},
-    {sec:'Автоматы 1ф (₽/шт)'},
+    {sec:'auto1'},
     {k:'auto1_10',l:'C10А'},{k:'auto1_16',l:'C16А'},{k:'auto1_25',l:'C25А'},
     {k:'auto1_32',l:'C32А'},{k:'auto1_40',l:'C40А'},{k:'auto1_63',l:'C63А'},
-    {sec:'Автоматы 3ф (₽/шт)'},
+    {sec:'auto3'},
     {k:'auto3_25',l:'C25А 3ф'},{k:'auto3_32',l:'C32А 3ф'},
     {k:'auto3_40',l:'C40А 3ф'},{k:'auto3_63',l:'C63А 3ф'},
-    {sec:'Дифавтоматы (₽/шт)'},
+    {sec:'dif'},
     {k:'dif1_16_30',l:'C16/30мА'},{k:'dif1_25_30',l:'C25/30мА'},
     {k:'dif1_16_10',l:'C16/10мА'},{k:'dif1_25_10',l:'C25/10мА'},
-    {sec:'УЗО (₽/шт)'},
+    {sec:'uzo'},
     {k:'uzo1_25_30',l:'25А/30мА'},{k:'uzo1_40_30',l:'40А/30мА'},{k:'uzo1_25_10',l:'25А/10мА'},
-    {sec:'Реле напряжения (₽/шт)'},
+    {sec:'relay'},
     {k:'relay_1f',l:'Однофазное'},{k:'relay_3f',l:'Трёхфазное'},
-    {sec:'Щитки (₽/шт)'},
+    {sec:'щ'},
     {k:'щ12',l:'12 мест'},{k:'щ24',l:'24 места'},{k:'щ36',l:'36 мест'},{k:'щ48',l:'48 мест'},
-    {sec:'Монтажные материалы'},
+    {sec:'mat'},
     {k:'gofra16',l:'Гофра 16мм, м'},{k:'wago_3',l:'WAGO-3, шт'},{k:'podroz',l:'Подрозетник, шт'},
+    {sec:'other'},
   ];
 
   let h='';
+  let curSec='';
   let inB=false;
+
   bFields.forEach(f=>{
-    if(f.sec){
+    if(f.sec!==undefined){
+      // Закрываем предыдущую секцию
       if(inB)h+='</div>';
-      h+=`<div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;padding:10px 0 4px">${f.sec}</div><div class="mblk">`;
-      inB=true;return;
+      curSec=f.sec;
+      const secDef=SECS.find(s=>s.id===curSec);
+      if(!secDef)return;
+      h+=`<div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;padding:10px 0 4px">${secDef.lbl}</div><div class="mblk">`;
+      inB=true;
+      // Вставляем кастомные позиции этой секции
+      extras.forEach((e,i)=>{
+        if((e.sec||'other')!==curSec)return;
+        h+=`<div class="sf-row" style="flex-wrap:wrap;gap:4px;padding:8px 12px;background:var(--bg2)">
+          <input style="flex:2;min-width:80px;background:var(--bg);border:1.5px solid var(--acc);border-radius:6px;padding:4px 8px;font-size:11px;outline:none"
+            value="${escHtml(e.lbl)}" placeholder="Название позиции"
+            oninput="updBrandExtra('${bk}',${i},'lbl',this.value)">
+          <input type="number" style="width:70px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;text-align:right;outline:none"
+            value="${e.price}" placeholder="Цена"
+            oninput="updBrandExtra('${bk}',${i},'price',parseFloat(this.value)||0)">
+          <input type="number" style="width:50px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;text-align:right;outline:none"
+            value="${e.qty||1}"
+            oninput="updBrandExtra('${bk}',${i},'qty',parseFloat(this.value)||0)">
+          <select style="width:46px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 5px;font-size:11px;outline:none"
+            onchange="updBrandExtra('${bk}',${i},'unit',this.value)">
+            <option value="шт" ${(e.unit||'шт')==='шт'?'selected':''}>шт</option>
+            <option value="м" ${e.unit==='м'?'selected':''}>м</option>
+          </select>
+          <button onclick="delBrandExtra('${bk}',${i})"
+            style="background:var(--rd-l);border:none;border-radius:6px;padding:4px 8px;color:var(--rd);cursor:pointer;font-size:11px">✕</button>
+        </div>`;
+      });
+      // Кнопка добавить в эту секцию
+      h+=`</div><div style="margin-bottom:6px"><button class="btn" style="width:100%;font-size:11px" onclick="addBrandExtra('${bk}','${curSec}')">+ Добавить в «${secDef.lbl}»</button></div><div class="mblk">`;
+      // Сбрасываем inB чтобы следующий {sec} закрыл новый блок
+      // Но нам нужен пустой блок как placeholder — закроем сразу
+      h+='</div>';
+      inB=false;
+      return;
+    }
+    if(!inB){
+      h+=`<div class="mblk">`;
+      inB=true;
     }
     const defVal=bDef[f.k]||0;
     const userVal=userP[f.k];
@@ -2383,40 +2435,8 @@ function openBrandEditor(bk){
   });
   if(inB)h+='</div>';
 
-  // Доп. позиции этого бренда
-  h+=`<div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;padding:12px 0 6px">Дополнительные позиции</div>
-  <div style="font-size:11px;color:var(--t3);margin-bottom:6px;line-height:1.5">
-    Позиции которых нет в списке — попадут в закупку и смету в раздел материалов.
-  </div>`;
-  if(extras.length){
-    h+=`<div class="mblk" style="margin-bottom:6px">`;
-    extras.forEach((e,i)=>{
-      h+=`<div class="sf-row" style="flex-wrap:wrap;gap:4px;padding:8px 12px">
-        <input style="flex:2;min-width:80px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;outline:none"
-          value="${escHtml(e.lbl)}" placeholder="Название позиции"
-          oninput="updBrandExtra('${bk}',${i},'lbl',this.value)">
-        <input type="number"
-          style="width:70px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;text-align:right;outline:none"
-          value="${e.price}" placeholder="Цена"
-          oninput="updBrandExtra('${bk}',${i},'price',parseFloat(this.value)||0)">
-        <input type="number"
-          style="width:50px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:11px;text-align:right;outline:none"
-          value="${e.qty||1}" placeholder="Кол."
-          oninput="updBrandExtra('${bk}',${i},'qty',parseFloat(this.value)||0)">
-        <select style="width:46px;background:var(--bg);border:1.5px solid var(--bdr);border-radius:6px;padding:4px 5px;font-size:11px;outline:none"
-          onchange="updBrandExtra('${bk}',${i},'unit',this.value)">
-          <option value="шт" ${(e.unit||'шт')==='шт'?'selected':''}>шт</option>
-          <option value="м" ${e.unit==='м'?'selected':''}>м</option>
-        </select>
-        <button onclick="delBrandExtra('${bk}',${i})"
-          style="background:var(--rd-l);border:none;border-radius:6px;padding:4px 8px;color:var(--rd);cursor:pointer;font-size:11px">✕</button>
-      </div>`;
-    });
-    h+=`</div>`;
-  }
-  h+=`<button class="btn" style="width:100%" onclick="addBrandExtra('${bk}')">+ Добавить позицию</button>
-  <div style="margin-top:8px;display:flex;gap:8px">
-    <button class="btn btn-d" style="flex:1" onclick="resetBrandPrices('${bk}')">Сбросить цены к дефолту</button>
+  h+=`<div style="margin-top:8px">
+    <button class="btn btn-d" style="width:100%" onclick="resetBrandPrices('${bk}')">Сбросить цены к дефолту</button>
   </div>`;
 
   const brand=BRANDS[bk]||{};
@@ -2570,13 +2590,12 @@ function updBrandExtra(bk,i,k,v){
   PR_MAP[CUR].brand_extra[bk][i][k]=v;
   save();
 }
-function addBrandExtra(bk){
-  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_WORK};
+function addBrandExtra(bk,sec){
+  if(!PR_MAP[CUR])PR_MAP[CUR]={...DP_CLIENT};
   if(!PR_MAP[CUR].brand_extra)PR_MAP[CUR].brand_extra={};
   if(!PR_MAP[CUR].brand_extra[bk])PR_MAP[CUR].brand_extra[bk]=[];
-  PR_MAP[CUR].brand_extra[bk].push({lbl:'',price:0,qty:1,unit:'шт'});
-  save();
-  openBrandEditor(bk);
+  PR_MAP[CUR].brand_extra[bk].push({lbl:'',price:0,qty:1,unit:'шт',sec:sec||'other'});
+  save();openBrandEditor(bk);
 }
 function delBrandExtra(bk,i){
   if(PR_MAP[CUR]?.brand_extra?.[bk])PR_MAP[CUR].brand_extra[bk].splice(i,1);
